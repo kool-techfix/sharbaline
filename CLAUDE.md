@@ -11,7 +11,7 @@ A hospital management system for a Nigerian hospital, built and maintained remot
 1. Paper patient folders (single copy, lost or torn, slow to retrieve) → digital patient records plus scanned folder pages.
 2. Doctors cannot see pharmacy stock when prescribing → live stock availability at prescribing time, a dispensing flow, and a log of unfilled prescriptions.
 
-Full requirements: `/docs/scope.md`. Architecture, schema and build order: `/docs/architecture.md`. Visual designs: `/docs/design/*.png`. Decisions log: `/docs/decisions.md`.
+Full requirements: `/docs/scope.md`. Architecture, schema and build order: `/docs/architecture.md`. Design references: `/docs/design/*.png` (references, not specs; see UI conventions). Decisions log: `/docs/decisions.md`.
 
 ## The three principles (they override convenience)
 
@@ -118,7 +118,8 @@ Run lint and tests before declaring any task done.
 
 ## UI conventions
 
-- Build from the design PNGs in `/docs/design/`. Match layout and hierarchy; if you deviate, record why in `/docs/decisions.md`.
+- **Scope and decisions outrank the designs.** The PNGs in `/docs/design/` are references for layout, hierarchy and look, not specifications (D-021). Where a PNG conflicts with `/docs/scope.md` or `/docs/decisions.md`, follow the scope and decisions. You may redesign away from a PNG to fit the scope.
+- **Never build an element from a PNG that is outside Phase 1 scope or adds risk**, e.g. extra patient data on a screen, a state the scope doesn't define, or collapsed connection states. Leave it out, record the deviation in `/docs/decisions.md`, and mention it when reporting the work.
 - Use design tokens (colors, type, spacing) defined once in Tailwind config. Primary teal `#0F766E`, navy headings **[TODO: confirm against final designs]**.
 - Reuse shared components (Button, Input, Table, StatusChip, ConnectionChip, Sidebar, TopBar). Do not create one-off variants without reason.
 - Targets: 1366×768 laptop first, tablet second. Body text ≥ 16 px, click targets ≥ 44 px, visible focus, full keyboard operation, WCAG 2.1 AA contrast.
@@ -147,7 +148,7 @@ Run lint and tests before declaring any task done.
 
 ## Definition of done
 
-- Matches the design (or deviation documented)
+- Fits the scope; follows the design references where they agree with it (deviations documented)
 - Server-side permission checks and audit entries in place
 - Tests added and passing; lint and typecheck clean
 - No PHI in logs; synthetic data only

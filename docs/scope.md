@@ -254,7 +254,7 @@ Standby server <── streaming replication ── PostgreSQL (primary)
 - Minimal typing: search-and-select, quick-pick chips, sensible defaults.
 - English first; structure strings for later translation (Hausa, Yoruba, Igbo, Pidgin possible) **[CONFIRM]**.
 - Pages must remain usable on slow LAN/Wi-Fi: no large blocking bundles; lazy-load heavy components such as the document viewer.
-- Design references: `/docs/design/*.png`. Match layout and hierarchy; deviations are noted in `/docs/decisions.md`.
+- Design references: `/docs/design/*.png`. They guide layout, hierarchy and look but are not specifications: this scope and `/docs/decisions.md` take precedence, and screens may be redesigned to fit them. Elements outside scope or adding risk are not built. Deviations are noted in `/docs/decisions.md` (D-021).
 
 ## 10. Non-functional targets
 
@@ -289,7 +289,7 @@ Each slice: plan → implement (UI + API + DB) → tests → review → merge.
 
 ## 13. Definition of done (per slice)
 
-- Matches the relevant design PNG (or deviations documented)
+- Fits the scope; follows the relevant design PNG where it agrees with scope and decisions (deviations documented; D-021)
 - Server-side permission checks and audit entries present
 - Tests written and passing, including the permission matrix for new endpoints
 - No PHI in logs; no real data used

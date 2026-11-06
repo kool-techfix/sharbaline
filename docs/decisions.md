@@ -164,3 +164,17 @@ All responses carry a CSP of `default-src 'self'` (fonts, images and connections
 - **Playwright on macOS 12:** current Playwright Chromium no longer runs on macOS 12. Locally, run e2e against installed Google Chrome with `PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e`. CI (Ubuntu) uses Playwright's Chromium.
 - **No runtime or build-time phoning home:** `NEXT_TELEMETRY_DISABLED=1` and `CHECKPOINT_DISABLE=1` (the Prisma update check) are set in `.env.example` and CI.
 - pnpm install scripts are allowed only for the packages listed in `package.json` → `pnpm.onlyBuiltDependencies`.
+
+## D-021 · Design PNGs are references; scope and decisions take precedence
+2026-11-06 · Accepted · Project lead
+
+**Context.** The design PNGs are prototypes and conflict with the scope in several places: the patient phone number on the pharmacist screen (D-004), "Blocked · allergy" (D-005), and the offline login screen, which is labelled "Working offline" but describes a device that can't reach the server.
+
+**Decision.**
+- `/docs/scope.md` and this log take precedence over `/docs/design/*.png`. The PNGs guide layout, hierarchy and look, and screens may be **redesigned away from them** to fit the scope.
+- An element shown in a PNG that is **outside Phase 1 scope or adds risk is not built**: extra patient data, states the scope doesn't define, or collapsed connection states (rule 16). The omission is recorded here and mentioned when the work is reported.
+
+**Applied to connection states on sign-in.** All §7.1 states stay distinct:
+- **Online**: sign-in works normally.
+- **Working offline**: internet down, LAN server reachable. Sign-in and all daily work continue normally, and the chip says "Working offline". This is the expected state during internet outages.
+- **Server unreachable**: the device can't reach the on-site server. The login screen uses the offline PNG's layout and "new sign-in needs a connection" notice, with this title and chip instead of "Working offline".
