@@ -4,6 +4,7 @@ import { uuidv7 } from "@/lib/ids";
 import type { Db } from "@/server/db/client";
 import type { Tx } from "@/server/db/tx";
 import type { RequestContext } from "@/server/kernel/context";
+import type { AuditActor } from "@/server/kernel/outcome";
 
 /**
  * Small, flat, non-identifying facts only: counts, field names, codes, opaque IDs.
@@ -25,13 +26,18 @@ export interface AuditEntry {
 /**
  * Append one audit entry. Pass the service's transaction so the entry commits or rolls back
  * with the change it describes. seq, prev_hash and hash are filled by the database trigger.
+ * `subject` names the account when the request itself is anonymous (sign-in steps).
  */
 export async function writeAudit(
   client: Tx | Db,
   ctx: RequestContext,
   entry: AuditEntry,
+  subject?: AuditActor,
 ): Promise<void> {
-  const actor = ctx.actor.kind === "user" ? ctx.actor : null;
+  const actor: AuditActor | null =
+    ctx.actor.kind === "user"
+      ? { userId: ctx.actor.userId, role: ctx.actor.role, sessionId: ctx.actor.sessionId }
+      : (subject ?? null);
   await client.auditLog.create({
     data: {
       id: uuidv7(),

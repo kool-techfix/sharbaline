@@ -61,3 +61,147 @@ model AuditLog {
   @@index([action, occurredAt])
   @@map("audit_log")
 }
+
+// ───────────────────────────── Authentication (M1) ─────────────────────────────
+
+enum SessionStage {
+  password_change_required
+  mfa_enrollment_required
+  mfa_pending
+  active
+}
+
+enum MfaStatus {
+  pending
+  active
+  revoked
+}
+
+/// Staff account. staff_id/email are stored trimmed + lower-case (CHECK constraints).
+model User {
+  id                 String    @id @db.Uuid
+  staffId            String    @unique @map("staff_id")
+  email              String?   @unique
+  displayName        String    @map("display_name")
+  passwordHash       String    @map("password_hash")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  passwordChangedAt  DateTime  @default(now()) @map("password_changed_at") @db.Timestamptz(6)
+  disabledAt         DateTime? @map("disabled_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById        String?   @map("created_by_id") @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  roles         UserRole[]
+  mfaSecrets    MfaSecret[]
+  recoveryCodes RecoveryCode[]
+  sessions      Session[]
+
+  @@map("user")
+}
+
+model UserRole {
+  userId      String   @map("user_id") @db.Uuid
+  role        Role
+  grantedAt   DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
+  grantedById String?  @map("granted_by_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([userId, role])
+  @@map("user_role")
+}
+
+/// TOTP secret, AES-256-GCM encrypted (key from MFA_ENCRYPTION_KEY, AAD = user id).
+/// At most one active row per user (partial unique index in SQL).
+model MfaSecret {
+  id               String    @id @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  status           MfaStatus
+  secretCiphertext Bytes     @map("secret_ciphertext")
+  secretIv         Bytes     @map("secret_iv")
+  keyVersion       Int       @map("key_version")
+  /// Last accepted TOTP time step; codes at or before it are rejected (replay protection).
+  lastUsedStep     BigInt?   @map("last_used_step")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  confirmedAt      DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  recoveryCodes RecoveryCode[]
+
+  @@index([userId])
+  @@map("mfa_secret")
+}
+
+/// One-time recovery code, stored as HMAC-SHA256 (high-entropy codes; Argon2 not needed).
+model RecoveryCode {
+  id          String    @id @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  mfaSecretId String    @map("mfa_secret_id") @db.Uuid
+  codeHash    Bytes     @unique @map("code_hash")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(6)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  mfaSecret MfaSecret @relation(fields: [mfaSecretId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("recovery_code")
+}
+
+/// Server-side session. The cookie holds a random token; only its SHA-256 is stored.
+model Session {
+  id             String       @id @db.Uuid
+  tokenHash      Bytes        @unique @map("token_hash")
+  userId         String       @map("user_id") @db.Uuid
+  deviceId       String?      @map("device_id") @db.Uuid
+  activeRole     Role         @map("active_role")
+  stage          SessionStage
+  /// Expiry of a non-active stage (e.g. 5 minutes to enter the MFA code).
+  stageExpiresAt DateTime?    @map("stage_expires_at") @db.Timestamptz(6)
+  mfaVerifiedAt  DateTime?    @map("mfa_verified_at") @db.Timestamptz(6)
+  ip             String?      @db.Inet
+  userAgent      String?      @map("user_agent")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Last USER-initiated activity (input, actions). Background polling never updates it.
+  lastActivityAt DateTime     @map("last_activity_at") @db.Timestamptz(6)
+  lastSeenAt     DateTime     @map("last_seen_at") @db.Timestamptz(6)
+  lockedAt       DateTime?    @map("locked_at") @db.Timestamptz(6)
+  unlockFailures Int          @default(0) @map("unlock_failures")
+  expiresAt      DateTime     @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime?    @map("revoked_at") @db.Timestamptz(6)
+  revokedReason  String?      @map("revoked_reason")
+  revokedById    String?      @map("revoked_by_id") @db.Uuid
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("session")
+}
+
+/// A browser on a workstation, identified by a long-lived random cookie. Not authentication;
+/// used for audit ("from which device") and, later, offline-cache wipe.
+model Device {
+  id          String   @id @db.Uuid
+  label       String?
+  userAgent   String?  @map("user_agent")
+  firstSeenAt DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+
+  sessions Session[]
+
+  @@map("device")
+}
+
+/// Failed sign-in counter, keyed by an HMAC of the account (or of the typed identifier when no
+/// account matches), so unknown identifiers lock exactly like real ones and reveal nothing.
+model LoginThrottle {
+  keyHash       Bytes     @id @map("key_hash")
+  failedCount   Int       @default(0) @map("failed_count")
+  firstFailedAt DateTime? @map("first_failed_at") @db.Timestamptz(6)
+  lockedUntil   DateTime? @map("locked_until") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("login_throttle")
+}

@@ -29,11 +29,13 @@ export default defineConfig({
       },
     },
   ],
+  // Builds, then starts a throwaway database + seeded synthetic accounts + `next start`
+  // (scripts/e2e/server.ts). Never reuses a dev server: e2e needs its own accounts and keys.
   webServer: {
-    command: `pnpm build && pnpm start -p ${PORT}`,
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
-    env: { HMS_COMPONENT_GALLERY: "true", NEXT_TELEMETRY_DISABLED: "1" },
+    command: `pnpm build && tsx --conditions=react-server scripts/e2e/server.ts`,
+    url: `${baseURL}/api/ping`,
+    reuseExistingServer: false,
+    timeout: 300_000,
+    env: { E2E_PORT: String(PORT), NEXT_TELEMETRY_DISABLED: "1" },
   },
 });

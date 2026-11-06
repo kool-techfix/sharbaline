@@ -178,3 +178,53 @@ All responses carry a CSP of `default-src 'self'` (fonts, images and connections
 - **Online**: sign-in works normally.
 - **Working offline**: internet down, LAN server reachable. Sign-in and all daily work continue normally, and the chip says "Working offline". This is the expected state during internet outages.
 - **Server unreachable**: the device can't reach the on-site server. The login screen uses the offline PNG's layout and "new sign-in needs a connection" notice, with this title and chip instead of "Working offline".
+
+## D-022 · Sign-in implementation (M1)
+2026-11-06 · Accepted · Project lead
+
+Implements the M1 decisions (Argon2id, 10-character minimum with a common-password check, 5 failures → 15 minutes, TOTP for doctor/pharmacist/admin, 8 recovery codes, admin-issued temporary passwords, no email reset) with these specifics:
+- **Passwords:** Argon2id via `@node-rs/argon2` (prebuilt binaries, no compiler needed), m=19 MiB, t=2, p=1, to be benchmarked on the reference server in slice 9. Unicode is NFKC-normalised, and length counts code points (NIST SP 800-63B). Passwords may not contain the user's staff ID or email. The common-password list is 117,571 entries of 10+ characters from SecLists (MIT licence), bundled and read offline.
+- **Account existence never leaks:**
+  - Every failure path runs exactly one Argon2 verification.
+  - Lockout is counted per **account** when the identifier matches one (staff ID and email share the limit) and per **typed identifier** when it doesn't, so unknown identifiers lock identically.
+  - "Account disabled" is shown only after the correct password.
+- **Per-IP throttle:** 30 failed attempts per 15 minutes, held in memory (single process). The client IP comes from `X-Forwarded-For` (rightmost entry, the one Caddy appended), and only when `TRUST_PROXY_HEADERS=true`. Next.js doesn't expose the socket address, so **the app port must be reachable only through the proxy**.
+- **Second-factor failures** (TOTP and recovery codes) count toward the same 5-attempt lockout (proposal a). Reaching it also revokes the half-signed-in session. **Enrollment-confirmation typos do not count**: the password is already proven and the 15-minute enrollment deadline bounds the attempts.
+- **TOTP:** SHA-1, 6 digits, 30 s, ±1 step. Replay is blocked by storing the last accepted step under a row lock, so two simultaneous uses of one code let exactly one through. Secrets are AES-256-GCM encrypted with the user ID as associated data, and the key is versioned.
+- **Recovery codes:** 10 Crockford-base32 characters (50 bits), formatted `XXXXX-XXXXX`. Stored as HMAC-SHA256 bound to the user. Redeemed by one atomic UPDATE, so of two simultaneous uses exactly one succeeds. When ≤ 2 remain, the user is told to ask for a reset.
+- **Stage order after the password:** second factor (if enrolled) → temporary-password change → forced enrollment (if any of the user's roles requires MFA; proposal d) → active. Each step has a 5-minute deadline (15 for enrollment) and **issues a new session token**.
+- **Multi-role users** land on their first role in the order admin → doctor → pharmacist → nurse → lab → front_desk. Role switching comes with user management.
+- **Admin account services** (revoke sessions, disable, temporary password, unlock, reset MFA) exist with tests; their screens come with the user-management slice. The last active admin can't be disabled, and admins can't disable themselves or reset their own MFA.
+- **First admin:** `pnpm admin:bootstrap` on the server console. It refuses once any active admin exists (runbook: `docs/runbooks/admin-bootstrap.md`).
+- **Optional MFA for other roles:** there's no self-enrollment screen yet. Add it with the user-settings work.
+
+## D-023 · Sessions and idle lock
+2026-11-06 · Accepted · Project lead
+
+- **Server-side sessions.** The `__Host-hms_session` cookie (HttpOnly, Secure, SameSite=Lax) holds 256 random bits; only the SHA-256 is stored. Every protected request re-reads the session, so revocation and disabling take effect on the next request. A 30-second heartbeat covers idle screens (within 1 minute).
+- **Absolute lifetime of 12 hours** (one shift; proposal b).
+- **Idle lock after 10 minutes without keyboard or pointer input.** The heartbeat never counts as activity.
+  - The browser locks at exactly 10 minutes and tells the server.
+  - The server independently locks after 10 minutes plus a grace period (≤ 60 s), because the browser reports activity at most every 30 s.
+  - All tabs share activity and lock state (BroadcastChannel).
+  - While locked, page content is **unmounted** and the server renders only the lock screen, so a reload doesn't bypass it.
+- **Unlocking needs the password only** (proposal c). 5 wrong passwords revoke the session, and failures also count toward the account lockout. The lock screen offers "Not you? Sign out" for shared workstations.
+- `SESSION_IDLE_SECONDS_OVERRIDE` exists for e2e tests and can only **shorten** the timeout (5–599 s), so a mistake in production can't weaken it.
+- **Device:** a long-lived random `__Host-hms_device` cookie identifies the browser for audit ("from which device") and, later, offline-cache wipe. It is not a credential.
+
+## D-024 · Connection status on screen
+2026-11-06 · Accepted · Project lead
+
+- `/api/health` answers from the on-site server with whether **the server** can reach the internet. It probes `INTERNET_PROBE_URL` at most once a minute in the background with a 3 s timeout. The URL is **required in production**; without it, "Working offline" could never be detected.
+- The browser checks every 30 s, and on focus and network events:
+  - health request fails → **Server unreachable**
+  - internet down → **Working offline**, where everything keeps working
+  - otherwise **Online**
+- The sign-in screens replace the form with the Server unreachable panel (D-021) and offer "Try connection again".
+
+## D-025 · Every protected page checks the session itself
+2026-11-06 · Accepted · Project lead
+
+In Next.js a layout does **not** re-run when moving between pages under it, so the session check in `(staff)/layout.tsx` alone isn't enough. **Every protected page calls `requireRole()` (or `requireSignedIn()`), and every server action and route handler checks the session or goes through a kernel service.**
+
+A related Next.js behaviour: setting a cookie in a server action re-renders the current page on the server. Pages in the middle of a sign-in flow (`/login`, `/mfa/enroll`) therefore don't redirect away when the session becomes active during the flow; the client flow navigates once it has shown what it must (recovery codes, low-codes warning). E2E tests cover both. This was found by them: the first version skipped the recovery-code screen.

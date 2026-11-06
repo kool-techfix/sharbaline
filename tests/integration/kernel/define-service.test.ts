@@ -43,7 +43,7 @@ const probeInsert = defineService({
     await tx.$executeRaw`INSERT INTO kernel_probe (id) VALUES (${input.id}::uuid)`;
     if (input.mode === "throw") throw new Error("simulated crash after write");
     if (input.mode === "expected_failure") {
-      return fail("probe_rejected", "errors.unexpected", { attempts: 1 });
+      return fail("probe_rejected", "errors.unexpected", { metadata: { attempts: 1 } });
     }
     return ok({ id: input.id });
   },

@@ -34,7 +34,10 @@ Status: v0.1, approved for slice 0 · Companion to `scope.md` (requirements) and
     log.ts         the only logger; fixed non-identifying fields
     permissions/   matrix.ts (mirrors scope §4.1), breakGlass.ts
     audit/
-    auth/          password (argon2id), TOTP, sessions, rate limiting
+    auth/          pure sign-in rules: password policy, lockout, TOTP, recovery codes, stages,
+                   session rules, MFA encryption, tokens (D-022, D-023)
+    http/          cookies, request context, client IP, page guards, action results
+    system/        internet probe (D-024)
     services/      users/ patients/ queue/ visits/ notes/ vitals/ allergies/ lab/ drugs/
                    stock/ prescriptions/ dispensing/ documents/ reports/ system/
     storage/       FileStore interface → local disk now, S3-compatible later
@@ -75,13 +78,22 @@ Status: v0.1, approved for slice 0 · Companion to `scope.md` (requirements) and
 
 ### 2.2 Users, auth, audit
 ```
-User              id, staff_id UNIQUE, email UNIQUE, display_name, password_hash (argon2id),
-                  must_change_password, failed_login_count, locked_until, disabled_at, created_at
+User              id, staff_id UNIQUE (lower-case, CHECK), email UNIQUE?, display_name,
+                  password_hash (argon2id), must_change_password, password_changed_at,
+                  disabled_at?, created_at, created_by_id?      never deleted (no DELETE grant)
 UserRole          PK(user_id, role)   role enum: front_desk|nurse|doctor|lab|pharmacist|admin
-MfaCredential     id, user_id, secret_encrypted, enabled_at, recovery_codes_hashed[], reset_at
-Session           id, token_hash, user_id, device_id, active_role, created_at, last_seen_at,
-                  locked_at, expires_at, revoked_at        checked per request
-Device            id, label, registered_at, last_seen_at, wipe_requested_at
+MfaSecret         id, user_id, status (pending|active|revoked), secret_ciphertext, secret_iv,
+                  key_version, last_used_step (replay guard), confirmed_at?, revoked_at?
+                  partial UNIQUE: one active per user
+RecoveryCode      id, user_id, mfa_secret_id, code_hash (HMAC) UNIQUE, used_at?
+Session           id, token_hash UNIQUE, user_id, device_id?, active_role, stage
+                  (mfa_pending|password_change_required|mfa_enrollment_required|active),
+                  stage_expires_at? (CHECK: set iff not active), mfa_verified_at?, ip, user_agent,
+                  last_activity_at (user input only), last_seen_at, locked_at?, unlock_failures,
+                  expires_at (12 h), revoked_at?, revoked_reason?, revoked_by_id?
+Device            id, label?, user_agent, first_seen_at, last_seen_at
+LoginThrottle     key_hash PK (HMAC of account or typed identifier), failed_count,
+                  first_failed_at?, locked_until?
 AuditLog [AO]     id, seq (chain order), occurred_at, actor_user_id, actor_role, session_id,
                   device_id, ip, action (dotted name, CHECK), resource_type, resource_id,
                   patient_id?, outcome (success|failure|denied|error), reason_code (CHECK),

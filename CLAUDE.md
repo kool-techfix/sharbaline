@@ -40,7 +40,8 @@ If a task conflicts with a principle, stop and say so instead of working around 
 
 ## Commands
 
-First run: `pnpm install`, `cp .env.example .env`, `pnpm db:start` (leave running), `pnpm db:migrate`.
+First run: `pnpm install`, `cp .env.example .env` and fill in the blank keys (see comments there), `pnpm db:start` (leave running), `pnpm db:migrate`, `pnpm db:seed`.
+Scripts that import server code run with `tsx --conditions=react-server` (makes `server-only` a no-op outside Next).
 
 ```
 pnpm db:start           # local PostgreSQL in the foreground (data in .data/postgres)
@@ -55,7 +56,8 @@ pnpm db:migrate         # apply migrations (prisma migrate deploy)
 pnpm db:migrate:dev     # create a migration: use --create-only, add hand-written SQL + down.sql, then apply
 pnpm db:migrate:down    # roll back the latest migration (dev only)
 pnpm db:migrate:check   # every migration goes up, down, up cleanly (runs in CI)
-pnpm db:seed            # load SYNTHETIC seed data (refuses in production)
+pnpm db:seed            # load SYNTHETIC seed data: one demo user per role (refuses in production)
+pnpm admin:bootstrap    # create the FIRST admin on a new install (runbook: docs/runbooks/admin-bootstrap.md)
 docker compose up       # full on-site stack [TODO: deploy PR]
 ```
 
@@ -85,7 +87,7 @@ Run lint and tests before declaring any task done.
 ### Writes, permissions, audit
 4. **All mutations go through the service layer** (`/src/server/services`). No direct database writes from route handlers or components.
 5. Every service function that touches patient data must: check the caller's role permission, validate input with Zod, run in a **transaction**, and write an **audit entry**.
-6. **Permissions are enforced server-side.** Hiding a button is not security. Every new endpoint or server action needs a permission check and a test for each role.
+6. **Permissions are enforced server-side.** Hiding a button is not security. Every new endpoint or server action needs a permission check and a test for each role. **Every protected page calls `requireRole()`/`requireSignedIn()` itself**: Next.js layouts don't re-run between pages (D-025). Every export of a `"use server"` file is a public endpoint: export actions only.
 7. **Reads of patient records are audited too**, not just writes.
 8. Break-glass access (admin or out-of-role access to a clinical record) requires a reason, is flagged, and is logged.
 

@@ -38,6 +38,10 @@ const nextConfig: NextConfig = {
   // The Docker image (deploy PR) builds with BUILD_STANDALONE=1 for a minimal server bundle;
   // local `pnpm start` and e2e use the regular output, which `next start` requires.
   ...(process.env.BUILD_STANDALONE === "1" ? { output: "standalone" as const } : {}),
+  // Native Argon2 binding: load from node_modules at runtime rather than bundling it.
+  serverExternalPackages: ["@node-rs/argon2"],
+  // The common-password list is read from disk at runtime; make sure server builds carry it.
+  outputFileTracingIncludes: { "/**": ["./src/server/auth/data/common-passwords.txt"] },
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

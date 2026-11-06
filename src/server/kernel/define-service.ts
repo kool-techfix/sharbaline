@@ -21,6 +21,10 @@ interface RunArgs<I> {
   ctx: RequestContext;
 }
 
+/**
+ * Declare `run` BEFORE `audit` in a definition: TypeScript infers the result type T from the
+ * first of them it meets, and only `run` should decide it.
+ */
 export interface ServiceDefinition<S extends z.ZodType, T> {
   /** Audit action name, e.g. "users.disable". */
   action: string;
@@ -31,11 +35,12 @@ export interface ServiceDefinition<S extends z.ZodType, T> {
    * Returning false is a denial, audited as such.
    */
   authorize?: (args: RunArgs<z.output<S>>) => Promise<boolean>;
+  // NoInfer: T must come from run()'s return type, never from these callbacks.
   audit: {
     resourceType: string;
-    resourceId?: (input: z.output<S>, value?: T) => string | null;
-    patientId?: (input: z.output<S>, value?: T) => string | null;
-    metadata?: (input: z.output<S>, value?: T) => AuditMetadata;
+    resourceId?: (input: z.output<S>, value?: NoInfer<T>) => string | null;
+    patientId?: (input: z.output<S>, value?: NoInfer<T>) => string | null;
+    metadata?: (input: z.output<S>, value?: NoInfer<T>) => AuditMetadata;
   };
   run: (args: RunArgs<z.output<S>>) => Promise<Outcome<T>>;
 }
@@ -97,7 +102,7 @@ export function defineService<S extends z.ZodType, T>(def: ServiceDefinition<S, 
           resourceId: def.audit.resourceId?.(input, value) ?? null,
           patientId: def.audit.patientId?.(input, value) ?? null,
           metadata: { ...def.audit.metadata?.(input, value), ...(outcome.ok ? {} : outcome.metadata) },
-        });
+        }, outcome.auditActor);
         return outcome;
       });
     } catch (error) {
