@@ -28,30 +28,40 @@ If a task conflicts with a principle, stop and say so instead of working around 
 - Workstations are browsers (installable PWA). Phase 1 offline behavior = read-only encrypted cache plus draft autosave when the server is unreachable.
 - Generator plus UPS exist, but power can still drop abruptly, so every write must be crash-safe.
 
-## Stack **[TODO: confirm items not marked decided]**
+## Stack (versions and reasons: D-020)
 
-- Next.js (App Router) + TypeScript (strict), Tailwind CSS, shadcn/ui
+- Next.js 16 (App Router) + TypeScript 6 (strict), Tailwind CSS 4, shadcn-style components in `src/components/ui`
 - PostgreSQL + **Prisma** (decided, D-001). Triggers, CHECKs, trigram indexes, sequences and grants go as hand-written SQL in the migration; every migration folder has a hand-reviewed `down.sql`; row locks use `$queryRaw`/TypedSQL inside the service kernel transaction.
 - Zod for validation at every boundary
 - Vitest (unit/integration), Playwright (e2e)
+- PostgreSQL 18; locally and in tests via the `embedded-postgres` dev dependency, no Docker needed (D-015)
+- Two DB roles: `hms_owner` (migrations only) and `hms_app` (runtime, DML only) (D-016)
 - Package manager: **pnpm** (decided, D-002)
 
-## Commands **[TODO: fill in once scaffolded]**
+## Commands
+
+First run: `pnpm install`, `cp .env.example .env`, `pnpm db:start` (leave running), `pnpm db:migrate`.
 
 ```
-pnpm dev            # run locally
-pnpm build          # production build
-pnpm lint           # eslint + typecheck
-pnpm test           # unit + integration
-pnpm test:e2e       # playwright
-pnpm db:migrate     # apply migrations
-pnpm db:seed        # load SYNTHETIC seed data
-docker compose up   # full stack, as deployed on site
+pnpm db:start           # local PostgreSQL in the foreground (data in .data/postgres)
+pnpm dev                # run locally (needs db:start)
+pnpm build              # production build
+pnpm lint               # eslint (zero warnings) + typecheck
+pnpm test               # unit + integration (integration starts its own throwaway PostgreSQL)
+pnpm test:unit          # unit only, fast
+pnpm test:integration   # integration only
+pnpm test:e2e           # playwright against a production build; on macOS 12 prefix PLAYWRIGHT_CHANNEL=chrome
+pnpm db:migrate         # apply migrations (prisma migrate deploy)
+pnpm db:migrate:dev     # create a migration: use --create-only, add hand-written SQL + down.sql, then apply
+pnpm db:migrate:down    # roll back the latest migration (dev only)
+pnpm db:migrate:check   # every migration goes up, down, up cleanly (runs in CI)
+pnpm db:seed            # load SYNTHETIC seed data (refuses in production)
+docker compose up       # full on-site stack [TODO: deploy PR]
 ```
 
 Run lint and tests before declaring any task done.
 
-## Repo layout (full tree in `/docs/architecture.md` §1; adjust after scaffolding)
+## Repo layout (full tree in `/docs/architecture.md` §1)
 
 ```
 /docs/            scope.md, decisions.md, design/*.png, runbooks/
@@ -60,8 +70,9 @@ Run lint and tests before declaring any task done.
 /src/server/      services, permissions, audit, db access
 /src/lib/         shared utilities
 /prisma/          schema.prisma, migrations/<ts>_<name>/{migration,down}.sql, seed/
-/deploy/          docker-compose, proxy config, backup scripts
-/tests/           e2e and shared test helpers
+/scripts/db/      local/test PostgreSQL, down-migrations, migration check
+/deploy/          postgres init SQL + config now; compose, proxy, backup in the deploy PR
+/tests/           integration (with helpers) and e2e; unit tests sit next to source as *.test.ts
 ```
 
 ## Hard rules (never break these)
@@ -117,7 +128,9 @@ Run lint and tests before declaring any task done.
 
 ## Testing expectations
 
-- Every service mutation: integration test covering permission allowed/denied, validation failure, audit entry written, transaction rollback on failure.
+- Every service is built with `defineService` (`src/server/kernel`, D-017): it checks the role, validates with Zod, runs in a transaction and writes the audit entry. Return `fail(...)` for expected failures (the transaction commits); throw only for real errors (it rolls back).
+- Every service mutation: integration test covering permission allowed/denied, validation failure, audit entry written, transaction rollback on failure. Use `createTestDatabase()` and `userContext()` from `tests/integration/helpers`.
+- Every new append-only table: attach `forbid_mutation()` triggers and revoke UPDATE/DELETE/TRUNCATE from `hms_app` in its migration (see the audit_log migration).
 - Permission matrix: automated test for each role × protected resource.
 - Stock: unit tests for arithmetic, a concurrency test for simultaneous dispensing, and the ledger-sum invariant.
 - E2E (Playwright): registration → consultation → prescription → dispensing; lab order → result; behavior when the server is unreachable.

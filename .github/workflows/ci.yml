@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  CHECKPOINT_DISABLE: "1"
+  # Throwaway values for CI only. Integration tests start their own PostgreSQL with
+  # random passwords; these satisfy env validation for the build and e2e server.
+  DATABASE_URL: postgresql://hms_app:ci-not-a-secret@localhost:54329/hms
+  MIGRATE_DATABASE_URL: postgresql://hms_owner:ci-not-a-secret@localhost:54329/hms
+  APP_ORIGIN: http://localhost:3100
+  HOSPITAL_NAME: CI Hospital
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint and typecheck
+        run: pnpm lint
+      - name: Unit tests
+        run: pnpm test:unit
+      - name: Integration tests (embedded PostgreSQL)
+        run: pnpm test:integration
+      - name: Migrations are reversible (up, down, up)
+        run: pnpm db:migrate:check
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: E2E (production build, 1366x768)
+        run: pnpm test:e2e
+        env:
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

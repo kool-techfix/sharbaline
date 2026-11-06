@@ -1,0 +1,39 @@
+{
+  "app.staffPortal": "Staff portal",
+  "app.footer": "For authorised hospital staff · Contact your facility's IT support for access help",
+  "app.logoAlt": "Hospital logo",
+
+  "connection.online": "Online",
+  "connection.workingOffline": "Working offline",
+  "connection.serverUnreachable": "Server unreachable",
+  "connection.syncing#one": "Syncing {count} change",
+  "connection.syncing#other": "Syncing {count} changes",
+  "connection.lastSynced": "Last synced {time}",
+  "connection.label": "Connection status",
+
+  "errors.forbidden": "You don't have permission to do that. If you think you should, contact your administrator.",
+  "errors.invalidInput": "Some details need checking. Please review the highlighted fields.",
+  "errors.unexpected": "Something went wrong. Please try again. If it keeps happening, contact IT support.",
+
+  "home.title": "Sign-in is being set up",
+  "home.body": "This is the foundation build of the staff portal. Sign-in and role dashboards arrive in the next release.",
+
+  "gallery.title": "Component gallery",
+  "gallery.intro": "Shared components and design tokens. Development only; contains no patient data.",
+  "gallery.buttons": "Buttons",
+  "gallery.inputs": "Inputs",
+  "gallery.statusChips": "Status chips",
+  "gallery.connectionChips": "Connection states",
+  "gallery.sampleLabel": "Staff ID or email",
+  "gallery.sampleHint": "For example, nurse.demo",
+  "gallery.primary": "Sign in",
+  "gallery.secondary": "Try connection again",
+  "gallery.ghost": "Use a recovery code",
+  "gallery.danger": "Revoke session",
+  "gallery.disabled": "Unavailable",
+  "gallery.chipSuccess": "In stock",
+  "gallery.chipWarning": "Low stock",
+  "gallery.chipDanger": "Out of stock",
+  "gallery.chipInfo": "New result",
+  "gallery.chipNeutral": "Awaiting"
+}

@@ -102,3 +102,65 @@ Prisma doesn't manage partitioned tables well, and about 8 workstations won't pr
 2026-11-02 · Accepted · Project lead
 
 The scope's build order puts the availability layer at step 8. M3's acceptance test ("kill the browser mid-note, the draft is restored") needs encrypted local draft storage, so that part moves into the M3/M5b slice. Basic WAL archiving to the NAS also moves into slice 0's Compose setup, so no environment ever runs without backups.
+
+## D-014 · Migration files: `migration.sql` is the up, `down.sql` the reverse
+2026-11-06 · Accepted · Project lead
+
+Prisma only runs a file named `migration.sql`, so that file is each migration's **up**. A hand-reviewed `down.sql` sits beside it (D-001). This is what "each migration has .up.sql and .down.sql" means in practice.
+- `pnpm db:migrate:down` (`scripts/db/migrate-down.ts`) runs the latest `down.sql` and deletes that migration's row from `_prisma_migrations` **in one transaction**, so a failed rollback changes nothing. Dev and test only; production rollbacks follow a runbook.
+- `pnpm db:migrate:check` runs in CI. On a throwaway cluster it applies every migration, rolls each back, checks that no tables, types, functions or sequences are left, then applies everything again. It also fails if any migration lacks a `down.sql`.
+
+## D-015 · Local and test PostgreSQL via `embedded-postgres`; PostgreSQL 18
+2026-11-06 · Accepted · Project lead
+
+Developers and CI run a real PostgreSQL from the `embedded-postgres` dev dependency (PostgreSQL 18.6 binaries), with **no Docker or system install**. The development machine has neither, and this keeps setup to `pnpm install && pnpm db:start`.
+- Dev: `pnpm db:start` runs a persistent cluster in `.data/postgres` (git-ignored) on localhost:54329. Role names, passwords and the port are read from `.env`.
+- Integration tests: one throwaway cluster per run, plus a migrated template database. **Each test file gets its own copy** (`CREATE DATABASE … TEMPLATE`), because append-only tables reject the TRUNCATE that per-test cleanup would need.
+- Durability settings stay at their defaults (fsync on) in every environment, including tests (CLAUDE.md rule 12).
+- Production uses the official `postgres:18` image through Docker Compose (deploy PR). Both setups apply the **same** role and privilege SQL from `deploy/postgres/init/`, so dev permissions match production.
+
+## D-016 · Two database roles: `hms_owner` and `hms_app`
+2026-11-06 · Accepted · Project lead
+
+- `hms_owner` owns the schema and is used **only** by migrations (`MIGRATE_DATABASE_URL`).
+- `hms_app` is the running app's role (`DATABASE_URL`). It has DML only, never DDL. Default privileges give it SELECT/INSERT/UPDATE/DELETE on new tables. **Each append-only table's migration revokes UPDATE, DELETE and TRUNCATE** from it.
+- So a bug, or an injected query, in the app can't alter history or the schema even if it gets past the application code. The append-only trigger is a second layer that also stops the owner role.
+- Dev only: `hms_owner` gets CREATEDB for Prisma's shadow database. The on-site server never grants it.
+
+## D-017 · Service kernel: expected failures commit, exceptions roll back
+2026-11-06 · Accepted · Project lead
+
+Every service is built with `defineService` (`src/server/kernel`). It runs in this order: role permission check → Zod validation → one READ COMMITTED transaction (record-level `authorize`, then `run`, then the audit entry in the **same** transaction).
+- A service returns an `Outcome`. **An expected failure** (wrong password, item no longer pending) is returned with `fail(...)`. The transaction **commits**, so side effects such as a failed-login counter persist, and a `failure` audit entry is written alongside.
+- **An exception** means something is actually wrong. The transaction **rolls back**, an `error` (or `denied`) entry is written in a separate transaction, and the error is rethrown.
+- Denials and validation failures are audited before any work is done. Validation audits record **field names only, never submitted values**.
+- Every kernel service is audited, including reads and public services such as login. There is no opt-out for now.
+- Logging goes through `src/server/log.ts`, which accepts only fixed non-identifying fields and never `error.message`, because database errors can echo row values.
+- ESLint blocks Prisma and `@/server/db` imports outside `src/server`, and `@/server` imports in `src/lib` and `src/components`. This enforces rule 4 at lint time.
+
+## D-018 · Audit log: append-only and hash-chained
+2026-11-06 · Accepted · Project lead
+
+`audit_log` ships in the foundation PR rather than the login PR, as the plan had it, because the kernel's tests need it.
+- **Append-only:** no UPDATE/DELETE/TRUNCATE grant for `hms_app` (D-016), and the reusable `forbid_mutation()` trigger blocks them for every role, the owner included.
+- **Tamper-evident:** a BEFORE INSERT trigger takes a transaction-level advisory lock, assigns `seq` **after** the lock (so `seq` order is chain order), and sets `hash = sha256(prev_hash ‖ canonical row)`. `audit_log_verify_chain()` lists any broken link.
+- **Consequence 1:** audited transactions must use **READ COMMITTED**. Under REPEATABLE READ or SERIALIZABLE the trigger would read a stale previous hash and fork the chain, so it rejects them (SQLSTATE `HM001`). Stock concurrency will use row locks, not SERIALIZABLE.
+- **Consequence 2:** audited writes queue up behind the chain lock until commit. That's fine for 8–15 users. Keep audit writes at the end of transactions (the kernel does) and keep transactions short.
+- **Limitation:** deleting the *newest* rows can only be detected against an external anchor. The backup service will record the latest hash with each backup.
+- CHECK constraints keep `action` and `reason_code` to dotted machine names and `metadata` to a JSON object, which leaves no free-text field where patient details could slip in.
+
+## D-019 · Content Security Policy: own origin only; inline scripts allowed for now
+2026-11-06 · Accepted · Project lead
+
+All responses carry a CSP of `default-src 'self'` (fonts, images and connections are also self-only), plus `frame-ancestors 'none'`, `nosniff`, `no-referrer` and a restrictive Permissions-Policy (camera allowed for our own pages, for QR scanning). Besides limiting XSS, this **enforces the availability rule**: any accidental CDN or third-party dependency is blocked in the browser and caught by the e2e "no external requests" test.
+`script-src` still allows `'unsafe-inline'`, because Next.js needs it without per-request nonces. Moving to nonces, done in `proxy.ts`, is a hardening task for slice 9; it makes every page dynamically rendered. Fonts (Inter, OFL) are committed under `public/fonts`, including the Vietnamese subset, which carries the Yoruba dotted vowels and tone marks.
+
+## D-020 · Toolchain versions
+2026-11-06 · Accepted · Project lead
+
+- **Next.js 16.4, React 19.3, Tailwind CSS 4.3, Prisma 7.10** (with the `pg` driver adapter), **Zod 4.6, Vitest 5.1, Playwright 1.65**, all pinned exactly (`save-exact`).
+- **TypeScript 6.0**, not 7.0: typescript-eslint supports up to 6.0. Revisit when it supports 7.
+- **Node 22 LTS** (`.nvmrc`; Prisma needs ≥ 22.12). Node 22 leaves maintenance in April 2027, so **move to Node 24 LTS before the pilot**.
+- **Playwright on macOS 12:** current Playwright Chromium no longer runs on macOS 12. Locally, run e2e against installed Google Chrome with `PLAYWRIGHT_CHANNEL=chrome pnpm test:e2e`. CI (Ubuntu) uses Playwright's Chromium.
+- **No runtime or build-time phoning home:** `NEXT_TELEMETRY_DISABLED=1` and `CHECKPOINT_DISABLE=1` (the Prisma update check) are set in `.env.example` and CI.
+- pnpm install scripts are allowed only for the packages listed in `package.json` → `pnpm.onlyBuiltDependencies`.

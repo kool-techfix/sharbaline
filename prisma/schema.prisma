@@ -1,0 +1,63 @@
+// HMS database schema. Conventions: docs/architecture.md §2.1. ORM rules: decisions D-001.
+//
+// Prisma does not model triggers, CHECK constraints, standalone sequences or grants.
+// Those live as hand-written SQL in each migration.sql (listed in its header comment),
+// with the reverse in down.sql. Columns that a trigger fills in are declared optional
+// here and made mandatory with a CHECK constraint, so the Prisma client does not require
+// callers to supply them and Prisma's drift detection stays quiet.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Staff roles. Must match ROLES in src/server/permissions/roles.ts (checked by a unit test).
+enum Role {
+  front_desk
+  nurse
+  doctor
+  lab
+  pharmacist
+  admin
+}
+
+enum AuditOutcome {
+  success
+  failure
+  denied
+  error
+}
+
+/// Append-only (trigger + grants). Every patient-record read/write and every security
+/// event lands here. Never store patient data or secrets in any column, metadata included.
+/// seq, prev_hash and hash are set by the audit_log_chain trigger; client values are ignored.
+model AuditLog {
+  id           String       @id @db.Uuid
+  seq          BigInt?      @unique
+  occurredAt   DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  actorUserId  String?      @map("actor_user_id") @db.Uuid
+  actorRole    Role?        @map("actor_role")
+  sessionId    String?      @map("session_id") @db.Uuid
+  deviceId     String?      @map("device_id") @db.Uuid
+  ip           String?      @db.Inet
+  action       String
+  resourceType String?      @map("resource_type")
+  resourceId   String?      @map("resource_id")
+  patientId    String?      @map("patient_id") @db.Uuid
+  outcome      AuditOutcome
+  reasonCode   String?      @map("reason_code")
+  requestId    String       @map("request_id")
+  metadata     Json         @default("{}")
+  prevHash     Bytes?       @map("prev_hash")
+  hash         Bytes?
+
+  @@index([occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@index([patientId, occurredAt])
+  @@index([action, occurredAt])
+  @@map("audit_log")
+}
