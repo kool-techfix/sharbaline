@@ -5,6 +5,13 @@ export function normalizeIdentifier(raw: string): string {
   return raw.normalize("NFKC").trim().toLowerCase();
 }
 
+/**
+ * A stored (normalised) staff ID. Must match the user_staff_id_format CHECK in the
+ * auth_login_mfa migration: validate with it so bad input is a validation failure, not a
+ * database error.
+ */
+export const STAFF_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]$/;
+
 export function isEmailIdentifier(normalized: string): boolean {
   return normalized.includes("@");
 }

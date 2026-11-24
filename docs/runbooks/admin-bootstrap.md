@@ -8,6 +8,7 @@
    ```
    pnpm admin:bootstrap --staff-id <staff id> --name "<full name>" [--email <work email>]
    ```
+   The staff ID is stored in lower case and must be 3–64 letters, digits, dots, hyphens or underscores, starting and ending with a letter or digit. The command says which value is invalid and creates nothing.
 3. The command prints a **temporary password once**. Give it to the administrator **in person**. Never send it by SMS, WhatsApp or email.
 4. The administrator signs in, chooses their own password, and sets up an authenticator app on their phone. They must **write down the 8 recovery codes** and store them somewhere private.
 5. The administrator then creates a **second administrator** in the app straight away. With only one admin, nobody can reset that admin's authenticator if they lose their phone (see `lost-mfa-device.md`).

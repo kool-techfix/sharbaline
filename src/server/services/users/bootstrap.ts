@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { defineService } from "@/server/kernel/define-service";
 import { fail, ok, type Outcome } from "@/server/kernel/outcome";
+import { STAFF_ID_PATTERN, normalizeIdentifier } from "@/server/auth/identifiers";
 import { newTemporaryPassword } from "@/server/auth/tokens";
 import { insertUser } from "./shared";
 
@@ -13,7 +14,7 @@ import { insertUser } from "./shared";
 export const bootstrapAdmin = defineService({
   action: "users.bootstrap_admin",
   input: z.object({
-    staffId: z.string().trim().min(3).max(64),
+    staffId: z.string().max(200).transform(normalizeIdentifier).pipe(z.string().regex(STAFF_ID_PATTERN)),
     email: z.email().max(254).nullable(),
     displayName: z.string().trim().min(1).max(120),
   }),
