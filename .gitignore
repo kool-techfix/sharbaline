@@ -150,3 +150,12 @@ vite.config.ts.timestamp-*
 
 # macOS
 .DS_Store
+
+# HMS
+!.env.example
+src/generated/
+.data/
+next-env.d.ts
+playwright-report/
+test-results/
+*.tsbuildinfo

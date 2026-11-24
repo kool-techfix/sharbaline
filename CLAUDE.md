@@ -11,7 +11,7 @@ A hospital management system for a Nigerian hospital, built and maintained remot
 1. Paper patient folders (single copy, lost or torn, slow to retrieve) → digital patient records plus scanned folder pages.
 2. Doctors cannot see pharmacy stock when prescribing → live stock availability at prescribing time, a dispensing flow, and a log of unfilled prescriptions.
 
-Full requirements: `/docs/scope.md`. Architecture, schema and build order: `/docs/architecture.md`. Visual designs: `/docs/design/*.png`. Decisions log: `/docs/decisions.md`.
+Full requirements: `/docs/scope.md`. Architecture, schema and build order: `/docs/architecture.md`. Design references: `/docs/design/*.png` (references, not specs; see UI conventions). Decisions log: `/docs/decisions.md`.
 
 ## The three principles (they override convenience)
 
@@ -28,30 +28,42 @@ If a task conflicts with a principle, stop and say so instead of working around 
 - Workstations are browsers (installable PWA). Phase 1 offline behavior = read-only encrypted cache plus draft autosave when the server is unreachable.
 - Generator plus UPS exist, but power can still drop abruptly, so every write must be crash-safe.
 
-## Stack **[TODO: confirm items not marked decided]**
+## Stack (versions and reasons: D-020)
 
-- Next.js (App Router) + TypeScript (strict), Tailwind CSS, shadcn/ui
+- Next.js 16 (App Router) + TypeScript 6 (strict), Tailwind CSS 4, shadcn-style components in `src/components/ui`
 - PostgreSQL + **Prisma** (decided, D-001). Triggers, CHECKs, trigram indexes, sequences and grants go as hand-written SQL in the migration; every migration folder has a hand-reviewed `down.sql`; row locks use `$queryRaw`/TypedSQL inside the service kernel transaction.
 - Zod for validation at every boundary
 - Vitest (unit/integration), Playwright (e2e)
+- PostgreSQL 18; locally and in tests via the `embedded-postgres` dev dependency, no Docker needed (D-015)
+- Two DB roles: `hms_owner` (migrations only) and `hms_app` (runtime, DML only) (D-016)
 - Package manager: **pnpm** (decided, D-002)
 
-## Commands **[TODO: fill in once scaffolded]**
+## Commands
+
+First run: `pnpm install`, `cp .env.example .env` and fill in the blank keys (see comments there), `pnpm db:start` (leave running), `pnpm db:migrate`, `pnpm db:seed`.
+Scripts that import server code run with `tsx --conditions=react-server` (makes `server-only` a no-op outside Next).
 
 ```
-pnpm dev            # run locally
-pnpm build          # production build
-pnpm lint           # eslint + typecheck
-pnpm test           # unit + integration
-pnpm test:e2e       # playwright
-pnpm db:migrate     # apply migrations
-pnpm db:seed        # load SYNTHETIC seed data
-docker compose up   # full stack, as deployed on site
+pnpm db:start           # local PostgreSQL in the foreground (data in .data/postgres)
+pnpm dev                # run locally (needs db:start)
+pnpm build              # production build
+pnpm lint               # eslint (zero warnings) + typecheck
+pnpm test               # unit + integration (integration starts its own throwaway PostgreSQL)
+pnpm test:unit          # unit only, fast
+pnpm test:integration   # integration only
+pnpm test:e2e           # playwright against a production build; on macOS 12 prefix PLAYWRIGHT_CHANNEL=chrome
+pnpm db:migrate         # apply migrations (prisma migrate deploy)
+pnpm db:migrate:dev     # create a migration: use --create-only, add hand-written SQL + down.sql, then apply
+pnpm db:migrate:down    # roll back the latest migration (dev only)
+pnpm db:migrate:check   # every migration goes up, down, up cleanly (runs in CI)
+pnpm db:seed            # load SYNTHETIC seed data: one demo user per role (refuses in production)
+pnpm admin:bootstrap    # create the FIRST admin on a new install (runbook: docs/runbooks/admin-bootstrap.md)
+docker compose up       # full on-site stack [TODO: deploy PR]
 ```
 
 Run lint and tests before declaring any task done.
 
-## Repo layout (full tree in `/docs/architecture.md` §1; adjust after scaffolding)
+## Repo layout (full tree in `/docs/architecture.md` §1)
 
 ```
 /docs/            scope.md, decisions.md, design/*.png, runbooks/
@@ -60,8 +72,9 @@ Run lint and tests before declaring any task done.
 /src/server/      services, permissions, audit, db access
 /src/lib/         shared utilities
 /prisma/          schema.prisma, migrations/<ts>_<name>/{migration,down}.sql, seed/
-/deploy/          docker-compose, proxy config, backup scripts
-/tests/           e2e and shared test helpers
+/scripts/db/      local/test PostgreSQL, down-migrations, migration check
+/deploy/          postgres init SQL + config now; compose, proxy, backup in the deploy PR
+/tests/           integration (with helpers) and e2e; unit tests sit next to source as *.test.ts
 ```
 
 ## Hard rules (never break these)
@@ -74,7 +87,7 @@ Run lint and tests before declaring any task done.
 ### Writes, permissions, audit
 4. **All mutations go through the service layer** (`/src/server/services`). No direct database writes from route handlers or components.
 5. Every service function that touches patient data must: check the caller's role permission, validate input with Zod, run in a **transaction**, and write an **audit entry**.
-6. **Permissions are enforced server-side.** Hiding a button is not security. Every new endpoint or server action needs a permission check and a test for each role.
+6. **Permissions are enforced server-side.** Hiding a button is not security. Every new endpoint or server action needs a permission check and a test for each role. **Every protected page calls `requireRole()`/`requireSignedIn()` itself**: Next.js layouts don't re-run between pages (D-025). Every export of a `"use server"` file is a public endpoint: export actions only.
 7. **Reads of patient records are audited too**, not just writes.
 8. Break-glass access (admin or out-of-role access to a clinical record) requires a reason, is flagged, and is logged.
 
@@ -107,7 +120,8 @@ Run lint and tests before declaring any task done.
 
 ## UI conventions
 
-- Build from the design PNGs in `/docs/design/`. Match layout and hierarchy; if you deviate, record why in `/docs/decisions.md`.
+- **Scope and decisions outrank the designs.** The PNGs in `/docs/design/` are references for layout, hierarchy and look, not specifications (D-021). Where a PNG conflicts with `/docs/scope.md` or `/docs/decisions.md`, follow the scope and decisions. You may redesign away from a PNG to fit the scope.
+- **Never build an element from a PNG that is outside Phase 1 scope or adds risk**, e.g. extra patient data on a screen, a state the scope doesn't define, or collapsed connection states. Leave it out, record the deviation in `/docs/decisions.md`, and mention it when reporting the work.
 - Use design tokens (colors, type, spacing) defined once in Tailwind config. Primary teal `#0F766E`, navy headings **[TODO: confirm against final designs]**.
 - Reuse shared components (Button, Input, Table, StatusChip, ConnectionChip, Sidebar, TopBar). Do not create one-off variants without reason.
 - Targets: 1366×768 laptop first, tablet second. Body text ≥ 16 px, click targets ≥ 44 px, visible focus, full keyboard operation, WCAG 2.1 AA contrast.
@@ -117,7 +131,9 @@ Run lint and tests before declaring any task done.
 
 ## Testing expectations
 
-- Every service mutation: integration test covering permission allowed/denied, validation failure, audit entry written, transaction rollback on failure.
+- Every service is built with `defineService` (`src/server/kernel`, D-017): it checks the role, validates with Zod, runs in a transaction and writes the audit entry. Return `fail(...)` for expected failures (the transaction commits); throw only for real errors (it rolls back).
+- Every service mutation: integration test covering permission allowed/denied, validation failure, audit entry written, transaction rollback on failure. Use `createTestDatabase()` and `userContext()` from `tests/integration/helpers`.
+- Every new append-only table: attach `forbid_mutation()` triggers and revoke UPDATE/DELETE/TRUNCATE from `hms_app` in its migration (see the audit_log migration).
 - Permission matrix: automated test for each role × protected resource.
 - Stock: unit tests for arithmetic, a concurrency test for simultaneous dispensing, and the ledger-sum invariant.
 - E2E (Playwright): registration → consultation → prescription → dispensing; lab order → result; behavior when the server is unreachable.
@@ -134,7 +150,7 @@ Run lint and tests before declaring any task done.
 
 ## Definition of done
 
-- Matches the design (or deviation documented)
+- Fits the scope; follows the design references where they agree with it (deviations documented)
 - Server-side permission checks and audit entries in place
 - Tests added and passing; lint and typecheck clean
 - No PHI in logs; synthetic data only

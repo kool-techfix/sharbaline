@@ -28,11 +28,16 @@ Status: v0.1, approved for slice 0 · Companion to `scope.md` (requirements) and
     ui/                     shadcn primitives
     Sidebar, TopBar, ConnectionChip, StatusChip, PatientHeader, AllergyChips, …
   server/
-    db/            Prisma client, withTransaction(), raw-SQL helpers (row locks)
-    kernel/        defineService(): permission → Zod → transaction → audit. The only write path.
+    config/        env.ts: Zod-validated environment (names, never values, in errors)
+    db/            Prisma client (as hms_app), withTransaction() (READ COMMITTED)
+    kernel/        defineService(): permission → Zod → transaction → audit. The only write path (D-017).
+    log.ts         the only logger; fixed non-identifying fields
     permissions/   matrix.ts (mirrors scope §4.1), breakGlass.ts
     audit/
-    auth/          password (argon2id), TOTP, sessions, rate limiting
+    auth/          pure sign-in rules: password policy, lockout, TOTP, recovery codes, stages,
+                   session rules, MFA encryption, tokens (D-022, D-023)
+    http/          cookies, request context, client IP, page guards, action results
+    system/        internet probe (D-024)
     services/      users/ patients/ queue/ visits/ notes/ vitals/ allergies/ lab/ drugs/
                    stock/ prescriptions/ dispensing/ documents/ reports/ system/
     storage/       FileStore interface → local disk now, S3-compatible later
@@ -47,12 +52,16 @@ Status: v0.1, approved for slice 0 · Companion to `scope.md` (requirements) and
   sw.ts            service worker
 /prisma/
   schema.prisma
-  migrations/<timestamp>_<name>/migration.sql + down.sql     (D-001)
+  migrations/<timestamp>_<name>/migration.sql + down.sql     (D-001, D-014)
   seed/            deterministic SYNTHETIC data generator
+/scripts/db/       embedded PostgreSQL for dev/tests, down-migrations, migration check (D-015)
 /deploy/
-  compose.yaml  proxy/Caddyfile  postgres/postgresql.conf  backup/  monitor-agent/  standby/
+  postgres/init/01-roles.sql, 02-database.sql   shared by Docker init and scripts/db (D-016)
+  postgres/postgresql.conf                      durability settings
+  compose.yaml  proxy/Caddyfile  backup/  monitor-agent/  standby/   (deploy PR)
 /tests/
-  integration/helpers/   permission-matrix/   e2e/
+  integration/helpers/   (createTestDatabase: per-file DB copied from a migrated template)
+  permission-matrix/   e2e/
   (unit tests live next to source as *.test.ts)
 ```
 
@@ -69,17 +78,28 @@ Status: v0.1, approved for slice 0 · Companion to `scope.md` (requirements) and
 
 ### 2.2 Users, auth, audit
 ```
-User              id, staff_id UNIQUE, email UNIQUE, display_name, password_hash (argon2id),
-                  must_change_password, failed_login_count, locked_until, disabled_at, created_at
+User              id, staff_id UNIQUE (lower-case, CHECK), email UNIQUE?, display_name,
+                  password_hash (argon2id), must_change_password, password_changed_at,
+                  disabled_at?, created_at, created_by_id?      never deleted (no DELETE grant)
 UserRole          PK(user_id, role)   role enum: front_desk|nurse|doctor|lab|pharmacist|admin
-MfaCredential     id, user_id, secret_encrypted, enabled_at, recovery_codes_hashed[], reset_at
-Session           id, token_hash, user_id, device_id, active_role, created_at, last_seen_at,
-                  locked_at, expires_at, revoked_at        checked per request
-Device            id, label, registered_at, last_seen_at, wipe_requested_at
-AuditLog [AO]     id, occurred_at, actor_user_id, actor_role, session_id, device_id, action,
-                  resource_type, resource_id, patient_id?, outcome (success|denied|error),
-                  break_glass_event_id?, request_id, metadata jsonb (field names only, no values),
-                  prev_hash, hash
+MfaSecret         id, user_id, status (pending|active|revoked), secret_ciphertext, secret_iv,
+                  key_version, last_used_step (replay guard), confirmed_at?, revoked_at?
+                  partial UNIQUE: one active per user
+RecoveryCode      id, user_id, mfa_secret_id, code_hash (HMAC) UNIQUE, used_at?
+Session           id, token_hash UNIQUE, user_id, device_id?, active_role, stage
+                  (mfa_pending|password_change_required|mfa_enrollment_required|active),
+                  stage_expires_at? (CHECK: set iff not active), mfa_verified_at?, ip, user_agent,
+                  last_activity_at (user input only), last_seen_at, locked_at?, unlock_failures,
+                  expires_at (12 h), revoked_at?, revoked_reason?, revoked_by_id?
+Device            id, label?, user_agent, first_seen_at, last_seen_at
+LoginThrottle     key_hash PK (HMAC of account or typed identifier), failed_count,
+                  first_failed_at?, locked_until?
+AuditLog [AO]     id, seq (chain order), occurred_at, actor_user_id, actor_role, session_id,
+                  device_id, ip, action (dotted name, CHECK), resource_type, resource_id,
+                  patient_id?, outcome (success|failure|denied|error), reason_code (CHECK),
+                  request_id, metadata jsonb (object; field names/counts only),
+                  prev_hash, hash                          (built in foundation PR; D-018)
+                  break_glass_event_id? is added with break-glass
 BreakGlassEvent [AO]   id, user_id, patient_id, reason, started_at, expires_at
 BreakGlassReview [AO]  id, event_id, reviewer_id, outcome, comment, reviewed_at
 HospitalSetting   key PK, value jsonb, updated_by, updated_at     (patient_id_prefix, thresholds…)
