@@ -109,7 +109,7 @@ export const verifyTotpCode = defineService({
     }
 
     await tx.mfaSecret.update({ where: { id: mfa.id }, data: { lastUsedStep: BigInt(check.step) } });
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, key);
     const result = await advanceSession(
       tx,
       session,
@@ -160,7 +160,7 @@ export const redeemRecoveryCode = defineService({
     const remaining = await tx.recoveryCode.count({
       where: { userId: session.userId, mfaSecretId: mfa!.id, usedAt: null },
     });
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, key);
     const result = await advanceSession(
       tx,
       session,

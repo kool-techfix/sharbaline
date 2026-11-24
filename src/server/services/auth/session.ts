@@ -137,7 +137,7 @@ export const unlockSession = defineService({
       });
     }
 
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, key);
     const token = newSessionToken();
     await tx.session.update({
       where: { id: session.id },

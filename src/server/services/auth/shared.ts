@@ -80,34 +80,54 @@ export function auditActorFor(user: LoadedUser, role: Role | null, sessionId: st
 }
 
 // ─── Throttle rows (locked FOR UPDATE so concurrent attempts are counted one at a time) ───
+//
+// A row exists only while it holds something: success deletes it, and pruneThrottle removes
+// rows whose window and lock have both run out. Otherwise every identifier ever typed at
+// sign-in, including random unknown ones, would stay forever.
 
 export type ThrottleKey = Uint8Array<ArrayBuffer>;
 
 export async function lockThrottle(tx: Tx, key: ThrottleKey): Promise<ThrottleState> {
-  await tx.$executeRaw`INSERT INTO login_throttle (key_hash) VALUES (${key}) ON CONFLICT (key_hash) DO NOTHING`;
-  const rows = await tx.$queryRaw<
-    { failed_count: number; first_failed_at: Date | null; locked_until: Date | null }[]
-  >`SELECT failed_count, first_failed_at, locked_until FROM login_throttle WHERE key_hash = ${key} FOR UPDATE`;
-  const row = rows[0];
-  return row
-    ? { failedCount: row.failed_count, firstFailedAt: row.first_failed_at, lockedUntil: row.locked_until }
-    : EMPTY_THROTTLE;
+  // The row may be deleted by a concurrent success between our INSERT and SELECT; try again
+  // so we still end up holding the lock. Twice is enough: a deletion needs a success in between.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await tx.$executeRaw`INSERT INTO login_throttle (key_hash) VALUES (${key}) ON CONFLICT (key_hash) DO NOTHING`;
+    const rows = await tx.$queryRaw<
+      { failed_count: number; first_failed_at: Date | null; locked_until: Date | null }[]
+    >`SELECT failed_count, first_failed_at, locked_until FROM login_throttle WHERE key_hash = ${key} FOR UPDATE`;
+    const row = rows[0];
+    if (row) return { failedCount: row.failed_count, firstFailedAt: row.first_failed_at, lockedUntil: row.locked_until };
+  }
+  return EMPTY_THROTTLE;
 }
 
 export async function saveThrottle(tx: Tx, key: ThrottleKey, state: ThrottleState, now: Date): Promise<void> {
-  await tx.loginThrottle.update({
-    where: { keyHash: key },
-    data: {
-      failedCount: state.failedCount,
-      firstFailedAt: state.firstFailedAt,
-      lockedUntil: state.lockedUntil,
-      updatedAt: now,
-    },
-  });
+  await tx.$executeRaw`
+    INSERT INTO login_throttle (key_hash, failed_count, first_failed_at, locked_until, updated_at)
+    VALUES (${key}, ${state.failedCount}, ${state.firstFailedAt}, ${state.lockedUntil}, ${now})
+    ON CONFLICT (key_hash) DO UPDATE SET
+      failed_count = EXCLUDED.failed_count,
+      first_failed_at = EXCLUDED.first_failed_at,
+      locked_until = EXCLUDED.locked_until,
+      updated_at = EXCLUDED.updated_at`;
 }
 
-export async function clearThrottle(tx: Tx, key: ThrottleKey, now: Date): Promise<void> {
-  await saveThrottle(tx, key, EMPTY_THROTTLE, now);
+/** A cleared count is the same as no row, so remove it. */
+export async function clearThrottle(tx: Tx, key: ThrottleKey): Promise<void> {
+  await tx.$executeRaw`DELETE FROM login_throttle WHERE key_hash = ${key}`;
+}
+
+/**
+ * Delete rows that no longer hold anything: not written for longer than both the failure
+ * window and the lock duration, so their count has expired and any lock has ended. Rows
+ * another sign-in is holding are skipped, never waited on.
+ */
+export async function pruneThrottle(tx: Tx, now: Date): Promise<number> {
+  const { windowMs, durationMs } = AUTH_POLICY.lockout;
+  const cutoff = new Date(now.getTime() - Math.max(windowMs, durationMs));
+  return tx.$executeRaw`
+    DELETE FROM login_throttle WHERE key_hash IN (
+      SELECT key_hash FROM login_throttle WHERE updated_at < ${cutoff} FOR UPDATE SKIP LOCKED)`;
 }
 
 // ─── Sessions ───

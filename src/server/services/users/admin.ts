@@ -6,7 +6,7 @@ import { throttleKey } from "@/server/auth/identifiers";
 import { authHmacKey } from "@/server/auth/keys";
 import { hashPassword } from "@/server/auth/password";
 import { newTemporaryPassword } from "@/server/auth/tokens";
-import { clearThrottle, lockThrottle, revokeUserSessions } from "@/server/services/auth/shared";
+import { clearThrottle, revokeUserSessions } from "@/server/services/auth/shared";
 
 /*
  * Admin account actions (scope §4.1: users C R U = admin). The admin screens arrive with the
@@ -88,9 +88,7 @@ export const issueTemporaryPassword = defineService({
       data: { passwordHash: await hashPassword(temporaryPassword), mustChangePassword: true, passwordChangedAt: now },
     });
     await revokeUserSessions(tx, user.id, "password_reset", now, { byUserId: actorUserId(ctx) });
-    const key = throttleKey(authHmacKey(), { userId: user.id });
-    await lockThrottle(tx, key);
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, throttleKey(authHmacKey(), { userId: user.id }));
     return ok({ temporaryPassword });
   },
   audit: { resourceType: "user", resourceId: (input) => input.userId },
@@ -102,10 +100,7 @@ export const unlockAccount = defineService({
   input: target,
   permission: { resource: "users", action: "update" },
   async run({ tx, input }): Promise<Outcome<null>> {
-    const now = new Date();
-    const key = throttleKey(authHmacKey(), { userId: input.userId });
-    await lockThrottle(tx, key);
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, throttleKey(authHmacKey(), { userId: input.userId }));
     return ok(null);
   },
   audit: { resourceType: "user", resourceId: (input) => input.userId },

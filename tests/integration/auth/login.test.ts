@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomBytes } from "node:crypto";
 import { uuidv7 } from "@/lib/ids";
 
 // Wrap the timing-equaliser so tests can prove every failure path runs a full Argon2 check.
@@ -11,6 +12,8 @@ import { burnPasswordCheck } from "@/server/auth/password";
 import { resetIpThrottle } from "@/server/auth/ip-throttle";
 import { login } from "@/server/services/auth/login";
 import { readSession } from "@/server/services/auth/session";
+import { pruneThrottle } from "@/server/services/auth/shared";
+import { withTransaction } from "@/server/db/tx";
 import { anonymousContext } from "../helpers/context";
 import { auditFor, enrollTotp, makeUser } from "../helpers/auth";
 import { createTestDatabase, type TestDatabase } from "../helpers/db";
@@ -160,5 +163,39 @@ describe("login: step 1 (staff ID or email + password)", () => {
       t.db,
     );
     expect(otherIp.ok).toBe(true);
+  });
+});
+
+describe("login_throttle stays bounded", () => {
+  const rowCount = async () => (await t.appPool.query("SELECT count(*)::int AS n FROM login_throttle")).rows[0].n as number;
+
+  it("a successful sign-in leaves no throttle row behind", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const before = await rowCount();
+    await attempt(nurse.staffId, "wrong password").run();
+    expect(await rowCount()).toBe(before + 1);
+    expect((await attempt(nurse.staffId, nurse.password).run()).ok).toBe(true);
+    expect(await rowCount()).toBe(before);
+  });
+
+  it("expired rows are pruned, rows still counting or locked are kept", async () => {
+    const now = Date.now();
+    const insert = (updatedAgoMin: number, lockedForMin: number | null) =>
+      t.appPool.query(
+        `INSERT INTO login_throttle (key_hash, failed_count, first_failed_at, locked_until, updated_at)
+         VALUES ($3, 1, $1, $2, $1) RETURNING key_hash`,
+        [new Date(now - updatedAgoMin * 60_000), lockedForMin === null ? null : new Date(now + lockedForMin * 60_000), randomBytes(32)],
+      );
+    const stale = (await insert(16, null)).rows[0].key_hash;
+    const counting = (await insert(5, null)).rows[0].key_hash;
+    const locked = (await insert(1, 14)).rows[0].key_hash;
+
+    await withTransaction(t.db, (tx) => pruneThrottle(tx, new Date(now)));
+    const { rows } = await t.appPool.query("SELECT key_hash FROM login_throttle WHERE key_hash = ANY($1)", [
+      [stale, counting, locked],
+    ]);
+    const kept = rows.map((r: { key_hash: Buffer }) => r.key_hash.toString("hex"));
+    expect(kept).not.toContain(stale.toString("hex"));
+    expect(kept).toEqual(expect.arrayContaining([counting.toString("hex"), locked.toString("hex")]));
   });
 });
