@@ -49,12 +49,18 @@ export const disableUser = defineService({
     if (!user) return fail("not_found", "users.error.notFound");
     if (user.disabledAt) return ok(null);
 
-    // Never leave the hospital without an administrator.
+    // Never leave the hospital without an administrator. Lock every active admin row before
+    // counting: a plain count lets two admins disable each other at the same moment, each
+    // seeing the other as still active. Locked in id order so concurrent callers can't deadlock;
+    // a waiter re-reads the rows after the first commits and no longer counts a disabled admin.
     if (user.roles.some((r) => r.role === "admin")) {
-      const otherAdmins = await tx.user.count({
-        where: { id: { not: user.id }, disabledAt: null, roles: { some: { role: "admin" } } },
-      });
-      if (otherAdmins === 0) return fail("last_admin", "users.error.lastAdmin");
+      const activeAdmins = await tx.$queryRaw<{ id: string }[]>`
+        SELECT u.id FROM "user" u
+          JOIN user_role r ON r.user_id = u.id AND r.role = 'admin'
+         WHERE u.disabled_at IS NULL
+         ORDER BY u.id
+           FOR UPDATE OF u`;
+      if (!activeAdmins.some((admin) => admin.id !== user.id)) return fail("last_admin", "users.error.lastAdmin");
     }
 
     await tx.user.update({ where: { id: user.id }, data: { disabledAt: now } });

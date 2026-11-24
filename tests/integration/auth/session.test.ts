@@ -181,6 +181,31 @@ describe("sign-out, revocation and disabling", () => {
   });
 });
 
+describe("last-admin guard under concurrency", () => {
+  it("two admins disabling each other at the same moment leave one of them active", async () => {
+    const { rows } = await t.appPool.query(
+      `SELECT u.id FROM "user" u JOIN user_role r ON r.user_id = u.id
+        WHERE r.role = 'admin' AND u.disabled_at IS NULL`,
+    );
+    for (const row of rows) await t.ownerPool.query('UPDATE "user" SET disabled_at = now() WHERE id = $1', [row.id]);
+    const [a, b] = [await makeUser(t, { roles: ["admin"] }), await makeUser(t, { roles: ["admin"] })];
+    const as = (admin: TestUser) =>
+      userContext("admin", { actor: { kind: "user", userId: admin.id, role: "admin", sessionId: uuidv7() } });
+
+    const results = await Promise.all([
+      disableUser(as(a), { userId: b.id }, t.db),
+      disableUser(as(b), { userId: a.id }, t.db),
+    ]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok && r.reasonCode === "last_admin")).toHaveLength(1);
+    const active = await t.appPool.query(
+      `SELECT count(*)::int AS n FROM "user" WHERE id = ANY($1) AND disabled_at IS NULL`,
+      [[a.id, b.id]],
+    );
+    expect(active.rows[0].n).toBe(1);
+  });
+});
+
 describe("temporary passwords", () => {
   it("are forced to change at next sign-in, and the new one must pass the policy", async () => {
     const desk = await makeUser(t, { roles: ["front_desk"] });
