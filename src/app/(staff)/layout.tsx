@@ -14,12 +14,13 @@ import { LockedPage } from "./_components/LockedPage";
 export const dynamic = "force-dynamic";
 
 /**
- * Every staff page sits behind this layout: the session is checked on the server for each
- * request, and a locked session renders only the lock screen, never the page.
+ * Every staff page sits behind this layout. A locked session renders only the lock screen,
+ * never the page. The layout is not the enforcement point: each page also calls
+ * requireRole()/requireSignedIn(), which refuse locked sessions (D-025).
  * Placeholder shell; the Sidebar arrives with the first role workspace.
  */
 export default async function StaffLayout({ children }: { children: ReactNode }) {
-  const session = await requireSignedIn();
+  const session = await requireSignedIn({ allowLocked: true });
   const name = session.user.displayName;
 
   return (
