@@ -8,6 +8,7 @@ import { defineService } from "@/server/kernel/define-service";
 import { fail, ok, type Outcome } from "@/server/kernel/outcome";
 import { throttleKey } from "@/server/auth/identifiers";
 import { authHmacKey, mfaEncryptionKey, totpIssuer } from "@/server/auth/keys";
+import { recordIpFailure } from "@/server/auth/ip-throttle";
 import { isLocked, registerFailure } from "@/server/auth/lockout";
 import { decryptSecret, encryptSecret } from "@/server/auth/mfa-crypto";
 import { AUTH_POLICY } from "@/server/auth/policy";
@@ -55,6 +56,7 @@ async function registerSecondFactorFailure<T>(
   const key = throttleKey(authHmacKey(), { userId: session.userId });
   const next = registerFailure(await lockThrottle(tx, key), now);
   await saveThrottle(tx, key, next, now);
+  recordIpFailure(ctx.ip, now.getTime());
   const actor = auditActorFor(session.user, session.activeRole, session.id);
   if (next.justLocked) {
     await revokeSession(tx, session.id, "locked", now);
