@@ -9,7 +9,12 @@ const valid = {
   AUTH_HMAC_KEY: Buffer.alloc(32, 1).toString("base64"),
   MFA_ENCRYPTION_KEY: Buffer.alloc(32, 2).toString("base64"),
 };
-const production = { ...valid, NODE_ENV: "production", INTERNET_PROBE_URL: "https://example.org/" };
+const production = {
+  ...valid,
+  NODE_ENV: "production",
+  INTERNET_PROBE_URL: "https://example.org/",
+  TRUST_PROXY_HEADERS: "true",
+};
 
 describe("parseServerEnv", () => {
   it("accepts a complete development environment", () => {
@@ -45,6 +50,11 @@ describe("parseServerEnv", () => {
       /SESSION_IDLE_SECONDS_OVERRIDE/,
     );
     expect(parseServerEnv({ ...valid, SESSION_IDLE_SECONDS_OVERRIDE: "8" }).SESSION_IDLE_SECONDS_OVERRIDE).toBe(8);
+  });
+
+  it("requires trusted proxy headers in production, so per-IP limits and audit see real addresses", () => {
+    expect(() => parseServerEnv({ ...production, TRUST_PROXY_HEADERS: undefined })).toThrow(/TRUST_PROXY_HEADERS/);
+    expect(() => parseServerEnv({ ...production, TRUST_PROXY_HEADERS: "false" })).toThrow(/TRUST_PROXY_HEADERS/);
   });
 
   it("does not trust proxy headers unless told to", () => {

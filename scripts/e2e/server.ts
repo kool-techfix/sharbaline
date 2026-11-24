@@ -36,6 +36,8 @@ const appEnv = {
   MFA_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
   MFA_ENCRYPTION_KEY_VERSION: "1",
   SESSION_IDLE_SECONDS_OVERRIDE: String(E2E_IDLE_SECONDS),
+  // Required in production; no proxy here, so requests carry no X-Forwarded-For and IP is null.
+  TRUST_PROXY_HEADERS: "true",
   // The server probes itself: e2e has no internet dependency, and "Online" is shown.
   INTERNET_PROBE_URL: `http://localhost:${port}/api/ping`,
   HMS_COMPONENT_GALLERY: "true",
