@@ -14,7 +14,7 @@ import { isLocked, registerFailure } from "@/server/auth/lockout";
 import { burnPasswordCheck, hashPassword, verifyPassword } from "@/server/auth/password";
 import { checkPassword, type PasswordProblem } from "@/server/auth/password-policy";
 import { commonPasswords } from "@/server/auth/common-passwords";
-import { AUTH_POLICY, idleTimeoutMs } from "@/server/auth/policy";
+import { AUTH_POLICY, idleTimeoutMs, serverIdleGraceMs } from "@/server/auth/policy";
 import { sessionStatus, type SessionStatus } from "@/server/auth/session-rules";
 import type { SessionStage } from "@/server/auth/stage";
 import { SESSION_TOKEN_PATTERN, hashSessionToken, newSessionToken } from "@/server/auth/tokens";
@@ -248,9 +248,22 @@ export async function touchSession(
 ): Promise<void> {
   if (!SESSION_TOKEN_PATTERN.test(token)) return;
   const now = new Date();
+  const idleMs = currentIdleMs();
+  // Only a session that is usable right now may be touched. Without these conditions a direct
+  // call could move lastActivityAt forward on a session already past the idle limit (reviving
+  // it without an unlock), expired, or belonging to a disabled user. Mirrors sessionStatus().
+  const idleCutoff = new Date(now.getTime() - idleMs - serverIdleGraceMs(idleMs));
   await withTransaction(database, async (tx) => {
     await tx.session.updateMany({
-      where: { tokenHash: hashSessionToken(token), revokedAt: null, lockedAt: null, stage: "active" },
+      where: {
+        tokenHash: hashSessionToken(token),
+        revokedAt: null,
+        lockedAt: null,
+        stage: "active",
+        expiresAt: { gt: now },
+        lastActivityAt: { gte: idleCutoff },
+        user: { is: { disabledAt: null } },
+      },
       data: kind === "activity" ? { lastActivityAt: now, lastSeenAt: now } : { lastSeenAt: now },
     });
   });

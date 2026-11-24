@@ -78,6 +78,36 @@ describe("idle lock and unlock", () => {
     expect(await status(token)).toBe("active");
   });
 
+  it("activity reported after the idle limit doesn't revive the session (server lock holds)", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const { token } = await signIn(nurse);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Browser closed; nothing reads the session for 30 minutes, so it isn't marked locked yet.
+    vi.setSystemTime(Date.now() + 30 * 60_000);
+    await touchSession(token, "activity", t.db);
+    expect(await status(token)).toBe("locked");
+  });
+
+  it("activity can't extend a session past its 12-hour lifetime or for a disabled user", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const { token, sessionId } = await signIn(nurse);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 12 * 60 * 60_000 + 1000);
+    await touchSession(token, "activity", t.db);
+    const expired = await t.appPool.query("SELECT last_activity_at FROM session WHERE id = $1", [sessionId]);
+    expect(expired.rows[0].last_activity_at.getTime()).toBeLessThan(Date.now() - 60 * 60_000);
+    vi.useRealTimers();
+
+    const lab = await makeUser(t, { roles: ["lab"] });
+    const second = await signIn(lab);
+    await t.ownerPool.query('UPDATE "user" SET disabled_at = now() WHERE id = $1', [lab.id]);
+    const before = await t.appPool.query("SELECT last_activity_at FROM session WHERE id = $1", [second.sessionId]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await touchSession(second.token, "activity", t.db);
+    const after = await t.appPool.query("SELECT last_activity_at FROM session WHERE id = $1", [second.sessionId]);
+    expect(after.rows[0].last_activity_at).toEqual(before.rows[0].last_activity_at);
+  });
+
   it("unlocks with the password, rotating the token", async () => {
     const nurse = await makeUser(t, { roles: ["nurse"] });
     const { token } = await signIn(nurse);
