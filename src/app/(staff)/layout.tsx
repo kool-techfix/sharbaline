@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { LogOut, Stethoscope } from "lucide-react";
+import { Sidebar } from "@/components/Sidebar";
 import { StatusChip } from "@/components/StatusChip";
 import { Button } from "@/components/ui/button";
 import { ConnectionProvider, LiveConnectionChip } from "@/components/connection/ConnectionProvider";
@@ -10,6 +11,8 @@ import { currentIdleMs } from "@/server/services/auth/session";
 import { signOut } from "./actions";
 import { IdleLock } from "./_components/IdleLock";
 import { LockedPage } from "./_components/LockedPage";
+import { RoleSwitcher } from "./_components/RoleSwitcher";
+import { navFor } from "./_components/nav";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +20,6 @@ export const dynamic = "force-dynamic";
  * Every staff page sits behind this layout. A locked session renders only the lock screen,
  * never the page. The layout is not the enforcement point: each page also calls
  * requireRole()/requireSignedIn(), which refuse locked sessions (D-025).
- * Placeholder shell; the Sidebar arrives with the first role workspace.
  */
 export default async function StaffLayout({ children }: { children: ReactNode }) {
   const session = await requireSignedIn({ allowLocked: true });
@@ -47,7 +49,14 @@ export default async function StaffLayout({ children }: { children: ReactNode })
           <LockedPage displayName={name} />
         ) : (
           <IdleLock idleMs={currentIdleMs()} displayName={name}>
-            <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">{children}</main>
+            <div className="flex flex-1 flex-col md:flex-row">
+              <Sidebar
+                label={t("staff.nav")}
+                items={navFor(session.role)}
+                footer={<RoleSwitcher roles={session.user.roles} active={session.role} />}
+              />
+              <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">{children}</main>
+            </div>
           </IdleLock>
         )}
       </div>
