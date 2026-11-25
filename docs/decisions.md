@@ -299,3 +299,22 @@ Completes M1 apart from break-glass (D-028). All of it runs through kernel servi
 - **Audited** as `users.recover_admin`. The temporary password is never audited.
 
 **Consequences.** It needs server-console access, the same as `admin:bootstrap`. Anyone with that access can already read the database, so it adds no new way in. Keeping two admins (bootstrap runbook step 5) remains the main protection.
+
+## D-031 · Shared cloud test database (dev/test only)
+2026-11-25 · Accepted · Project lead
+
+**Context.** For hands-on testing of the current flows, the project lead set up a hosted database: Prisma Postgres, PostgreSQL 17.2. It has one superuser login and can't create the `hms_app`/`hms_owner` roles (D-016). It is reached over the internet.
+
+**Decision.** It may be used as a **shared test database for synthetic data only**:
+- **Connection:** `DATABASE_URL` and `MIGRATE_DATABASE_URL` both point at its single login. The migrations apply as they are; their grants to `hms_app` are skipped because that role doesn't exist there.
+- **Seed:** `pnpm db:seed` loads the synthetic demo users (`ALLOW_SEED=true`).
+- **Unchanged:** automated tests and e2e still start their own throwaway local PostgreSQL 18 (D-015), and `pnpm db:start` still runs the local two-role cluster.
+
+**Accepted gaps (test use only):**
+- The app runs as a superuser, so the role-level least-privilege protections (no DDL, no UPDATE/DELETE on append-only tables) are absent. The append-only **triggers** still apply.
+- It runs PostgreSQL 17, not 18.
+- It depends on the internet, unlike the on-site server.
+
+**Guard.** `serverEnv()` refuses to start in production unless `DATABASE_URL` connects as `hms_app`, so this database (or any owner or superuser login) can never serve real use.
+
+**Never** put real patient or staff data in it (CLAUDE.md rule 1).
