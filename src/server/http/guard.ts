@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { isSignedOut } from "@/server/auth/session-rules";
 import { ROLE_HOME, pathForStage } from "@/server/auth/stage";
-import type { Actor } from "@/server/kernel/context";
+import type { Actor, RequestContext } from "@/server/kernel/context";
 import type { Role } from "@/server/permissions/roles";
 import { readSession, type CurrentSession } from "@/server/services/auth/session";
 import { sessionTokenFromCookie } from "./cookies";
@@ -15,6 +15,16 @@ export async function currentSession(): Promise<CurrentSession | null> {
   const { actor: _anonymous, ...ctx } = await requestContext();
   void _anonymous;
   return readSession(token, ctx);
+}
+
+/**
+ * For server actions: a request context acting as the signed-in user, or null unless the
+ * session is fully signed in and unlocked. Services then check the role (rule 6).
+ */
+export async function callerContext(): Promise<RequestContext | null> {
+  const session = await currentSession();
+  if (!session || session.status !== "active") return null;
+  return requestContext(actorOf(session));
 }
 
 export function actorOf(session: CurrentSession): Actor {
