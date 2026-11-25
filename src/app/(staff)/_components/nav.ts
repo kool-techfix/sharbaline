@@ -8,5 +8,9 @@ import type { Role } from "@/server/permissions/roles";
  * call requireRole()/requireSignedIn() (D-025), so this list is never what enforces access.
  */
 export function navFor(role: Role): NavItem[] {
-  return [{ href: ROLE_HOME[role], label: t("staff.home") }];
+  return [
+    { href: ROLE_HOME[role], label: t("staff.home") },
+    ...(role === "admin" ? [{ href: "/admin/users", label: t("staff.users") }] : []),
+    { href: "/account", label: t("staff.account") },
+  ];
 }
