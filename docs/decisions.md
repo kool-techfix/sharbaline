@@ -286,3 +286,16 @@ Completes M1 apart from break-glass (D-028). All of it runs through kernel servi
   - Wrong passwords count toward the account lockout, as at unlock.
   - The pending setup expires after 15 minutes.
   - Once set up, sign-in asks for a code. Removing the authenticator needs an administrator (Reset authenticator).
+
+## D-030 · Recovering the only administrator
+2026-11-25 · Accepted · Project lead
+
+**Context.** If the only active admin lost their authenticator, nobody could reset it: admins can't reset their own (D-022), and `admin:bootstrap` refuses while an active admin exists. The runbook pointed at bootstrap, which couldn't work.
+
+**Decision.** A server-console command, `pnpm admin:recover --staff-id <id>` (service `users.recover_admin`):
+- **Last resort only.** It works only for an active admin, and refuses while **any other active admin exists**. That admin resets the authenticator in the app instead.
+- **Replaces both factors.** It revokes the authenticator and recovery codes, issues a temporary password (printed once), ends every session and lifts any lockout. The next sign-in forces a new password and then a new authenticator.
+- **Identity** is checked when the temporary password is handed over in person. The hospital's written approval is required (runbook `lost-mfa-device.md` step 6).
+- **Audited** as `users.recover_admin`. The temporary password is never audited.
+
+**Consequences.** It needs server-console access, the same as `admin:bootstrap`. Anyone with that access can already read the database, so it adds no new way in. Keeping two admins (bootstrap runbook step 5) remains the main protection.

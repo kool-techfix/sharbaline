@@ -130,6 +130,8 @@
   "users.error.lastAdmin": "This is the only active administrator. Add another administrator first.",
   "users.error.cannotResetOwnMfa": "Ask another administrator to reset your authenticator.",
   "users.error.adminExists": "An administrator already exists. Create accounts from the admin screens instead.",
+  "users.error.notAnActiveAdmin": "No active administrator has that staff ID.",
+  "users.error.otherAdminExists": "Another active administrator exists. They should reset this authenticator in the app.",
   "users.error.alreadyCreated": "This account was already created. Find it in the user list.",
   "users.error.staffIdTaken": "Another account already uses that staff ID.",
   "users.error.emailTaken": "Another account already uses that email.",

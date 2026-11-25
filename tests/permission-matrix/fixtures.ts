@@ -68,4 +68,5 @@ export const PUBLIC_SERVICES: Record<string, string> = {
   "auth.mfa_self_enroll_start": "own account only; needs the session token and the account password",
   "auth.mfa_self_enroll": "own account only; needs a setup started with the password",
   "users.bootstrap_admin": "server-console first admin; refuses once an admin exists",
+  "users.recover_admin": "server-console recovery of the only admin; refuses while another active admin exists",
 };
