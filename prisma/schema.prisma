@@ -205,3 +205,132 @@ model LoginThrottle {
 
   @@map("login_throttle")
 }
+
+// ───────────────────────────── Patient registry (M2) ─────────────────────────────
+
+enum Sex {
+  female
+  male
+}
+
+enum PaperFolderStatus {
+  not_digitized
+  partial
+  digitized
+}
+
+enum QueueStatus {
+  waiting
+  with_nurse
+  waiting_doctor
+  with_doctor
+  done
+  left
+}
+
+/// Hospital-wide settings, e.g. the patient number prefix (D-003). Changed by admins only.
+model HospitalSetting {
+  key         String   @id
+  value       Json
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("hospital_setting")
+}
+
+/// A registered patient. patient_number and patient_seq never change (trigger; D-003).
+/// name_search is the normalised full name (lib/domain/names.ts) with a trigram index.
+/// Merging is Phase 2; the columns exist now (D-010).
+model Patient {
+  id                    String            @id @db.Uuid
+  patientNumber         String            @unique @map("patient_number")
+  patientSeq            BigInt            @unique @map("patient_seq")
+  legacyCardNumber      String?           @map("legacy_card_number")
+  surname               String
+  firstName             String            @map("first_name")
+  otherNames            String?           @map("other_names")
+  sex                   Sex
+  dateOfBirth           DateTime          @map("date_of_birth") @db.Date
+  dobIsEstimated        Boolean           @default(false) @map("dob_is_estimated")
+  phoneE164             String?           @map("phone_e164")
+  address               String?
+  nameSearch            String            @map("name_search")
+  paperFolderStatus     PaperFolderStatus @default(not_digitized) @map("paper_folder_status")
+  priorityFolder        Boolean           @default(false) @map("priority_folder")
+  /// Optional photo: not collected in Phase 1 until the client confirms (scope §5 M2).
+  photoStorageKey       String?           @map("photo_storage_key")
+  consentVersion        String            @map("consent_version")
+  consentRecordedAt     DateTime          @map("consent_recorded_at") @db.Timestamptz(6)
+  consentRecordedById   String            @map("consent_recorded_by_id") @db.Uuid
+  possibleDuplicateOfId String?           @map("possible_duplicate_of_id") @db.Uuid
+  mergedIntoId          String?           @map("merged_into_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById           String            @map("created_by_id") @db.Uuid
+  updatedAt             DateTime          @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedById           String            @map("updated_by_id") @db.Uuid
+
+  possibleDuplicateOf Patient?            @relation("PossibleDuplicate", fields: [possibleDuplicateOfId], references: [id], onDelete: Restrict)
+  possibleDuplicates  Patient[]           @relation("PossibleDuplicate")
+  mergedInto          Patient?            @relation("MergedInto", fields: [mergedIntoId], references: [id], onDelete: Restrict)
+  mergedFrom          Patient[]           @relation("MergedInto")
+  nextOfKin           NextOfKin[]
+  queueEntries        QueueEntry[]
+  duplicateOverrides  DuplicateOverride[] @relation("OverrideNew")
+  suspectedIn         DuplicateOverride[] @relation("OverrideSuspected")
+
+  @@index([legacyCardNumber])
+  @@index([phoneE164])
+  @@index([dateOfBirth])
+  @@map("patient")
+}
+
+model NextOfKin {
+  id           String   @id @db.Uuid
+  patientId    String   @map("patient_id") @db.Uuid
+  name         String
+  relationship String
+  phoneE164    String?  @map("phone_e164")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([patientId])
+  @@map("next_of_kin")
+}
+
+/// Append-only: a registration that went ahead despite a possible duplicate (scope §5 M2).
+model DuplicateOverride {
+  id                 String   @id @db.Uuid
+  newPatientId       String   @map("new_patient_id") @db.Uuid
+  suspectedPatientId String   @map("suspected_patient_id") @db.Uuid
+  /// Duplicate score 0–100 at the time of the override.
+  score              Int
+  confirmedById      String   @map("confirmed_by_id") @db.Uuid
+  confirmedAt        DateTime @default(now()) @map("confirmed_at") @db.Timestamptz(6)
+
+  newPatient       Patient @relation("OverrideNew", fields: [newPatientId], references: [id], onDelete: Restrict)
+  suspectedPatient Patient @relation("OverrideSuspected", fields: [suspectedPatientId], references: [id], onDelete: Restrict)
+
+  @@index([newPatientId])
+  @@index([suspectedPatientId])
+  @@map("duplicate_override")
+}
+
+/// One patient's place in one day's queue (queue_date is the Lagos calendar day).
+model QueueEntry {
+  id          String      @id @db.Uuid
+  patientId   String      @map("patient_id") @db.Uuid
+  queueDate   DateTime    @map("queue_date") @db.Date
+  position    Int
+  status      QueueStatus @default(waiting)
+  addedById   String      @map("added_by_id") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+  updatedById String      @map("updated_by_id") @db.Uuid
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@unique([queueDate, patientId])
+  @@unique([queueDate, position])
+  @@map("queue_entry")
+}
