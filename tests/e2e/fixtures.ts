@@ -17,6 +17,8 @@ export const E2E_USERS = {
   nurseIdle: { staffId: "e2e.nurse.idle", displayName: "E2E Idle Nurse", role: "nurse", enrolled: false },
   nurseLockout: { staffId: "e2e.nurse.lockout", displayName: "E2E Lockout Nurse", role: "nurse", enrolled: false },
   frontDesk: { staffId: "e2e.frontdesk", displayName: "E2E Front Desk", role: "front_desk", enrolled: false },
+  adminEnrolled: { staffId: "e2e.admin", displayName: "E2E Admin", role: "admin", enrolled: true },
+  nurseMfaSetup: { staffId: "e2e.nurse.mfa", displayName: "E2E MFA Nurse", role: "nurse", enrolled: false },
   nurseAndLab: {
     staffId: "e2e.nurse.lab",
     displayName: "E2E Nurse Lab",

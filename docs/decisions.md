@@ -196,7 +196,7 @@ Implements the M1 decisions (Argon2id, 10-character minimum with a common-passwo
 - **Multi-role users** land on their first role in the order admin → doctor → pharmacist → nurse → lab → front_desk. Role switching: D-026.
 - **Admin account services** (revoke sessions, disable, temporary password, unlock, reset MFA) exist with tests; their screens come with the user-management slice. The last active admin can't be disabled, and admins can't disable themselves or reset their own MFA.
 - **First admin:** `pnpm admin:bootstrap` on the server console. It refuses once any active admin exists (runbook: `docs/runbooks/admin-bootstrap.md`).
-- **Optional MFA for other roles:** there's no self-enrollment screen yet. Add it with the user-settings work.
+- **Optional MFA for other roles:** self-enrollment from "My account" (D-029).
 
 ## D-023 · Sessions and idle lock
 2026-11-06 · Accepted · Project lead
@@ -260,3 +260,29 @@ Break-glass opens one **patient's** clinical record with a reason, flagged for r
 - an admin review screen
 
 M1 is complete apart from this item. Until it ships, admin has no clinical access at all, which is the safe default.
+
+## D-029 · Admin user management and "My account"
+2026-11-25 · Accepted · Project lead
+
+Completes M1 apart from break-glass (D-028). All of it runs through kernel services, so the generated permission suite covers it (D-027).
+
+**Users (`/admin/users`, admin only)**
+- **List and search** by name, staff ID or email, at most 200 rows. The search text is never audited; only whether a search was used and the result count.
+- **Create:**
+  - The client generates the account id (rule 11). A retried submit creates nothing and is refused (`already_created`), because the temporary password can't be shown a second time.
+  - The temporary password is shown **once** on screen, to hand over in person. It is never stored or sent anywhere.
+  - Staff ID and email must be unused.
+- **Edit name and email.** The staff ID can't be changed, because people sign in with it and the audit log refers to the account.
+- **Change roles:**
+  - Any change **signs the user out everywhere**. Their sessions were granted under the old roles, and a newly added MFA role must force enrollment at the next sign-in.
+  - Admins can't remove their own admin role.
+  - The last active admin can't lose the role. This uses the same row-locked check as disabling (`anotherActiveAdminExists`).
+- **Account actions,** each with an inline Confirm step (no browser dialogs): switch off, switch back on (new: `users.enable`), temporary password, lift lockout, reset authenticator, sign out everywhere. The page doesn't offer the actions the server refuses for one's own account.
+
+**My account (`/account`, every role)**
+- Shows the user's own name, staff ID, roles and authenticator status.
+- **Optional authenticator** for roles that don't require one (D-022):
+  - Starting setup asks for the **password again**. Otherwise anyone at an unlocked workstation could bind their own phone to the account and lock its owner out.
+  - Wrong passwords count toward the account lockout, as at unlock.
+  - The pending setup expires after 15 minutes.
+  - Once set up, sign-in asks for a code. Removing the authenticator needs an administrator (Reset authenticator).
