@@ -220,5 +220,12 @@
   "account.mfa.password": "Password",
   "account.mfa.continue": "Continue",
   "account.mfa.done": "Done",
-  "account.mfa.enabled": "Authenticator set up. You'll be asked for a code each time you sign in."
+  "account.mfa.enabled": "Authenticator set up. You'll be asked for a code each time you sign in.",
+  "patients.error.notFound": "That patient record wasn't found.",
+  "patients.error.invalidBirthDate": "Check the date of birth: it must be a real date and not in the future.",
+  "patients.error.idConflict": "This form was already used for another registration. Start a new registration.",
+  "patients.error.possibleDuplicate": "This patient may already be registered. Check the possible matches before continuing.",
+  "patients.error.changedElsewhere": "Someone else changed this record while you were editing. Reload it to see their changes, then make yours again.",
+  "queue.error.notFound": "That queue entry wasn't found.",
+  "queue.error.closed": "This patient has already finished or left today's queue."
 }

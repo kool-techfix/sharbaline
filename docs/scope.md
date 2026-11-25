@@ -49,6 +49,7 @@ C = create, R = read, U = update, C\* = correct by appending a new row (never an
 | Resource | front_desk | nurse | doctor | lab | pharmacist | admin |
 |---|---|---|---|---|---|---|
 | Patient demographics | C R U | R | R U | R (basic identity) | R (limited) | R |
+| Daily queue (D-032) | C R U | R U | R U | – | – | – |
 | Allergies / alerts | R | C R C\* | C R C\* | R | R | – |
 | Visit / consultation notes | – | R | C R U | – | – | – |
 | Vitals | – | C R C\* | R | – | – | – |

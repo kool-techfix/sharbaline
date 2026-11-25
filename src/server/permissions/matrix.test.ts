@@ -70,6 +70,13 @@ describe("permission matrix (docs/scope.md §4.1)", () => {
     expect([...rolesFor("scanned_documents", "create")].sort()).toEqual(["front_desk", "nurse"]);
   });
 
+  it("keeps the daily queue to front desk, nurses and doctors (D-032)", () => {
+    expect(rolesFor("queue", "create")).toEqual(["front_desk"]);
+    for (const action of ["create", "read", "update"]) {
+      for (const role of ["admin", "lab", "pharmacist"] as const) expect(rolesFor("queue", action)).not.toContain(role);
+    }
+  });
+
   it("can() answers per role", () => {
     const createUser: Permission = { resource: "users", action: "create" };
     expect(can("admin", createUser)).toBe(true);

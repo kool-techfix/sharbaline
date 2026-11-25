@@ -2,6 +2,9 @@ import { uuidv7 } from "@/lib/ids";
 import type { Permission } from "@/server/permissions/matrix";
 import type { TestDatabase } from "../integration/helpers/db";
 import { makeUser } from "../integration/helpers/auth";
+import { userContext } from "../integration/helpers/context";
+import { makePatient, patientInput } from "../integration/helpers/patients";
+import { addToQueue } from "@/server/services/queue/queue";
 
 /**
  * The expected permission and a valid input for every PROTECTED service, keyed by its audit
@@ -22,6 +25,15 @@ const anotherUser = async (t: TestDatabase) => ({ userId: (await makeUser(t, { r
 const readUsers: Permission = { resource: "users", action: "read" };
 const createUsers: Permission = { resource: "users", action: "create" };
 const updateUsers: Permission = { resource: "users", action: "update" };
+const createDemographics: Permission = { resource: "patient_demographics", action: "create" };
+const readDemographics: Permission = { resource: "patient_demographics", action: "read" };
+const updateDemographics: Permission = { resource: "patient_demographics", action: "update" };
+const aPatient = async (t: TestDatabase) => ({ patientId: (await makePatient(t)).id });
+const queuedEntry = async (t: TestDatabase) => {
+  const id = uuidv7();
+  await addToQueue(userContext("front_desk"), { id, patientId: (await makePatient(t)).id }, t.db);
+  return { entryId: id };
+};
 const newAccount = async () => ({
   id: uuidv7(),
   staffId: `pm.${uuidv7().slice(-12)}`,
@@ -48,6 +60,36 @@ export const FIXTURES: Record<string, Fixture> = {
     input: async (t) => ({ ...(await anotherUser(t)), roles: ["lab"] }),
   },
   "users.enable": { permission: updateUsers, input: anotherUser },
+  "patients.register": { permission: createDemographics, input: async () => patientInput() },
+  "patients.duplicate_check": {
+    permission: createDemographics,
+    input: async () => {
+      const { surname, firstName, birth, phone } = patientInput();
+      return { surname, firstName, birth, phone };
+    },
+  },
+  "patients.search": { permission: readDemographics, input: async () => ({ query: "Synthetic" }) },
+  "patients.view": { permission: readDemographics, input: aPatient },
+  "patients.update": {
+    permission: updateDemographics,
+    input: async (t) => {
+      const { id, input } = await makePatient(t);
+      const { rows } = await t.appPool.query("SELECT updated_at FROM patient WHERE id = $1", [id]);
+      const { id: _id, consentConfirmed: _c, acknowledgedDuplicateIds: _a, ...details } = input;
+      void _id;
+      void _c;
+      void _a;
+      return {
+        ...details,
+        patientId: id,
+        expectedUpdatedAt: (rows[0].updated_at as Date).toISOString(),
+        paperFolderStatus: "partial",
+      };
+    },
+  },
+  "queue.add": { permission: { resource: "queue", action: "create" }, input: async (t) => ({ id: uuidv7(), ...(await aPatient(t)) }) },
+  "queue.view": { permission: { resource: "queue", action: "read" }, input: async () => ({}) },
+  "queue.mark_left": { permission: { resource: "queue", action: "update" }, input: queuedEntry },
 };
 
 /**
