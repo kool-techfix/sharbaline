@@ -58,6 +58,10 @@ try {
       WHERE n.nspname = 'public' AND t.typtype = 'e'
     UNION ALL SELECT 'function', proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public'
+        -- Functions owned by an extension (e.g. pg_trgm) belong to the database init, not to
+        -- any migration (D-032), so they are expected to stay.
+        AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                         WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e')
     UNION ALL SELECT 'sequence', sequencename FROM pg_sequences WHERE schemaname = 'public'`);
   await leftovers.end();
   if (objects.rowCount) {

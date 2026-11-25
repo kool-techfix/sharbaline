@@ -19,3 +19,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE hms_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO hms_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE hms_owner IN SCHEMA public
   GRANT EXECUTE ON FUNCTIONS TO hms_app;
+
+-- Extensions the migrations need. Created here as a superuser because hms_owner can't
+-- (D-032). The migrations repeat them with IF NOT EXISTS, a no-op once they exist.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;

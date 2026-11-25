@@ -18,6 +18,12 @@ export const PERMISSIONS = {
     read: ["front_desk", "nurse", "doctor", "lab", "pharmacist", "admin"],
     update: ["front_desk", "doctor"],
   },
+  /** Today's queue (D-032). Nurse and doctor update statuses from M3. */
+  queue: {
+    create: ["front_desk"],
+    read: ["front_desk", "nurse", "doctor"],
+    update: ["front_desk", "nurse", "doctor"],
+  },
   allergies: {
     create: ["nurse", "doctor"],
     read: ["front_desk", "nurse", "doctor", "lab", "pharmacist"],
