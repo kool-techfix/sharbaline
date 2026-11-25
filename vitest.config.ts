@@ -35,7 +35,7 @@ export default defineConfig({
         test: {
           name: "integration",
           environment: "node",
-          include: ["tests/integration/**/*.test.ts", "src/**/*.int.test.ts"],
+          include: ["tests/integration/**/*.test.ts", "tests/permission-matrix/**/*.test.ts", "src/**/*.int.test.ts"],
           globalSetup: ["tests/integration/global-setup.ts"],
           testTimeout: 30_000,
           hookTimeout: 120_000,

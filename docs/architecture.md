@@ -104,7 +104,7 @@ BreakGlassEvent [AO]   id, user_id, patient_id, reason, started_at, expires_at
 BreakGlassReview [AO]  id, event_id, reviewer_id, outcome, comment, reviewed_at
 HospitalSetting   key PK, value jsonb, updated_by, updated_at     (patient_id_prefix, thresholds…)
 ```
-Permissions are defined in code (`server/permissions/matrix.ts`). The role × resource test suite is generated from that matrix.
+Permissions are defined in code (`server/permissions/matrix.ts`). The role × service test suite is generated from the services themselves (`tests/permission-matrix`, D-027).
 
 ### 2.3 Patients and queue
 ```
@@ -224,8 +224,9 @@ Each slice: its own branch → plan → UI + API + DB → tests → review → m
 | # | Slice | Contents |
 |---|---|---|
 | 0 | **Foundations** | Next.js + strict TS, pnpm, ESLint, Vitest against real Postgres, Playwright, CI (incl. migrate up/down/up). Docker Compose (`app`, `postgres` with durable config, `proxy` with LAN TLS) and basic WAL archiving to the NAS (D-013). Design tokens and shared components. `defineService` kernel, append-only trigger helper, audit writer, each with tests. |
-| 1 | **M1 Auth, roles, audit** | Login, TOTP, auto-lock/unlock, sessions, lockout, admin users, break-glass and its review. Permission-matrix test generator. |
+| 1 | **M1 Auth, roles, audit** | Login, TOTP, auto-lock/unlock, sessions, lockout, role navigation and switching, admin users, optional MFA self-enrollment. Permission-matrix test generator. |
 | 2 | **M2 Patient registry** | Patient numbers (prefix + sequence + Damm digit), legacy card number, registration, duplicate warning and override log, search, QR scan, CR80 card, daily queue. 100k synthetic seed to check search < 1 s. |
+| 2b | **Break-glass** (from M1; D-028) | Event and review tables (append-only, FK to patient), kernel support, reason dialog on the patient page, admin review screen. |
 | 3 | **M5a Pharmacy core** | *Needs the re-exported Pharmacy-Stock.png.* Drug catalogue, alternative and allergen groups, batches, ledger, receive, stock-take, adjust, expire, compensating entries and admin review, alerts. SSE realtime channel. Concurrency and invariant tests. |
 | 4 | **M3 Consultation + M5b Prescribing/Dispensing** | Visits, nurse vitals (with entered-in-error), allergies, versioned notes and conflict handling, encrypted local draft autosave (D-013), prescribing with live availability, alternatives and allergy override, cancel/amend while pending, dispensing queue with acknowledge/dispense/partial/substitute/unavailable, unfilled log. |
 | 5 | **M4 Lab** | Test catalogue, order queue, result drafts, release, SSE to the doctor, "new result" indicator. |

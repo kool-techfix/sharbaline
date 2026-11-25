@@ -7,7 +7,7 @@ import { withTransaction } from "@/server/db/tx";
 import type { RequestContext } from "@/server/kernel/context";
 import { defineService } from "@/server/kernel/define-service";
 import { fail, ok, type Outcome } from "@/server/kernel/outcome";
-import type { Role } from "@/server/permissions/roles";
+import { ROLES, type Role } from "@/server/permissions/roles";
 import { throttleKey } from "@/server/auth/identifiers";
 import { authHmacKey } from "@/server/auth/keys";
 import { isLocked, registerFailure } from "@/server/auth/lockout";
@@ -16,7 +16,7 @@ import { checkPassword, type PasswordProblem } from "@/server/auth/password-poli
 import { commonPasswords } from "@/server/auth/common-passwords";
 import { AUTH_POLICY, idleTimeoutMs, serverIdleGraceMs } from "@/server/auth/policy";
 import { sessionStatus, type SessionStatus } from "@/server/auth/session-rules";
-import type { SessionStage } from "@/server/auth/stage";
+import { ROLE_HOME, type SessionStage } from "@/server/auth/stage";
 import { SESSION_TOKEN_PATTERN, hashSessionToken, newSessionToken } from "@/server/auth/tokens";
 import { serverEnv } from "@/server/config/env";
 import {
@@ -184,6 +184,61 @@ export const lockIdleSession = defineService({
     return ok(null, { auditActor: auditActorFor(session.user, session.activeRole, session.id) });
   },
   audit: { resourceType: "session", metadata: (input) => ({ source: input.source }) },
+});
+
+export interface RoleSwitchResult {
+  token: string;
+  expiresAt: Date;
+  role: Role;
+  fromRole: Role;
+  redirectTo: string;
+}
+
+/**
+ * Change which of their roles a multi-role user is working in. The active role is what every
+ * permission check uses, so this is a privilege change: it rotates the session token and is
+ * audited under the NEW role. Only roles the account holds are accepted.
+ */
+export const switchActiveRole = defineService({
+  action: "auth.role_switch",
+  input: z.object({ token: sessionTokenSchema, role: z.enum(ROLES) }),
+  permission: {
+    public: true,
+    reason: "Changes only the caller's own session, identified by its token, to a role the account already holds.",
+  },
+  async run({ tx, input }): Promise<Outcome<RoleSwitchResult>> {
+    const now = new Date();
+    const session = await lockSessionByToken(tx, input.token);
+    const status = session
+      ? sessionStatus({ ...session, userDisabledAt: session.user.disabledAt }, now, currentIdleMs())
+      : null;
+    if (!session || status !== "active") return fail("session_invalid", "auth.error.signedOut");
+    if (!session.user.roles.includes(input.role)) {
+      return fail("role_not_held", "errors.forbidden", {
+        auditActor: auditActorFor(session.user, session.activeRole, session.id),
+      });
+    }
+
+    const token = newSessionToken();
+    await tx.session.update({
+      where: { id: session.id },
+      data: { tokenHash: hashSessionToken(token), activeRole: input.role, lastActivityAt: now, lastSeenAt: now },
+    });
+    return ok(
+      {
+        token,
+        expiresAt: session.expiresAt,
+        role: input.role,
+        fromRole: session.activeRole,
+        redirectTo: ROLE_HOME[input.role],
+      },
+      { auditActor: auditActorFor(session.user, input.role, session.id) },
+    );
+  },
+  audit: {
+    resourceType: "session",
+    metadata: (input, value) => ({ to_role: input.role, from_role: value?.fromRole ?? null }),
+  },
 });
 
 // ─── Reading the current session (every protected request) ───

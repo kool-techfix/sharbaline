@@ -7,6 +7,7 @@ import {
   lockIdleSession,
   logout,
   readSession,
+  switchActiveRole,
   touchSession,
   unlockSession,
 } from "@/server/services/auth/session";
@@ -335,5 +336,70 @@ describe("first-admin bootstrap", () => {
     );
     expect(rows[0].n).toBe(0);
     expect(await auditFor(t, ctx.requestId)).toMatchObject([{ action: "users.bootstrap_admin", outcome: "error" }]);
+  });
+});
+
+describe("role switching (multi-role users)", () => {
+  it("switches to another held role, rotates the token, and audits from and to", async () => {
+    const both = await makeUser(t, { roles: ["nurse", "lab"] });
+    const { token, sessionId } = await signIn(both); // lands on nurse (priority order)
+    const ctx = anonymousContext();
+    const outcome = await switchActiveRole(ctx, { token, role: "lab" }, t.db);
+    expect(outcome).toMatchObject({ ok: true, value: { role: "lab", fromRole: "nurse", redirectTo: "/lab" } });
+    if (!outcome.ok) return;
+    expect(await readSession(token, anonymousContext(), t.db)).toBeNull(); // old token is dead
+    expect(await readSession(outcome.value.token, anonymousContext(), t.db)).toMatchObject({
+      status: "active",
+      role: "lab",
+    });
+    expect(await auditFor(t, ctx.requestId)).toMatchObject([
+      {
+        action: "auth.role_switch",
+        outcome: "success",
+        actor_user_id: both.id,
+        actor_role: "lab",
+        session_id: sessionId,
+        metadata: { from_role: "nurse", to_role: "lab" },
+      },
+    ]);
+  });
+
+  it("refuses a role the account doesn't hold, and audits the refusal", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const { token } = await signIn(nurse);
+    const ctx = anonymousContext();
+    expect(await switchActiveRole(ctx, { token, role: "admin" }, t.db)).toMatchObject({
+      ok: false,
+      reasonCode: "role_not_held",
+    });
+    expect(await status(token)).toBe("active");
+    expect((await readSession(token, anonymousContext(), t.db))?.role).toBe("nurse");
+    expect(await auditFor(t, ctx.requestId)).toMatchObject([
+      { action: "auth.role_switch", outcome: "failure", reason_code: "role_not_held", actor_user_id: nurse.id },
+    ]);
+  });
+
+  it("refuses locked, revoked and unknown sessions", async () => {
+    const both = await makeUser(t, { roles: ["nurse", "lab"] });
+    const locked = await signIn(both);
+    await lockIdleSession(anonymousContext(), { token: locked.token, source: "browser" }, t.db);
+    expect(await switchActiveRole(anonymousContext(), { token: locked.token, role: "lab" }, t.db)).toMatchObject({
+      ok: false,
+      reasonCode: "session_invalid",
+    });
+    const revoked = await signIn(both);
+    await logout(anonymousContext(), { token: revoked.token }, t.db);
+    expect(await switchActiveRole(anonymousContext(), { token: revoked.token, role: "lab" }, t.db)).toMatchObject({
+      ok: false,
+      reasonCode: "session_invalid",
+    });
+  });
+
+  it("rejects an unknown role name as a validation failure", async () => {
+    const both = await makeUser(t, { roles: ["nurse", "lab"] });
+    const { token } = await signIn(both);
+    await expect(
+      switchActiveRole(anonymousContext(), { token, role: "superuser" }, t.db),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });

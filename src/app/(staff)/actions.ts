@@ -4,7 +4,14 @@ import { redirect } from "next/navigation";
 import { toActionResult, type ActionResult } from "@/server/http/action-result";
 import { clearSessionCookie, sessionTokenFromCookie, setSessionCookie } from "@/server/http/cookies";
 import { requestContext } from "@/server/http/context";
-import { lockIdleSession, logout, touchSession, unlockSession } from "@/server/services/auth/session";
+import { ValidationError } from "@/server/kernel/errors";
+import {
+  lockIdleSession,
+  logout,
+  switchActiveRole,
+  touchSession,
+  unlockSession,
+} from "@/server/services/auth/session";
 
 /* Session actions used by staff pages. Every export here is a public endpoint: actions only. */
 
@@ -52,4 +59,27 @@ export async function lockScreen(): Promise<void> {
   } catch {
     // Already locked or signed out: nothing to do.
   }
+}
+
+/**
+ * Work in another of the user's roles (form post from the role switcher). The service checks
+ * the role is held and the session usable; anything else lands on sign-in or stays put.
+ */
+export async function switchRole(formData: FormData): Promise<never> {
+  const token = await sessionTokenFromCookie();
+  if (!token) redirect("/login?reason=signed_out");
+  let destination = "/";
+  try {
+    const outcome = await switchActiveRole(await requestContext(), { token, role: formData.get("role") });
+    if (outcome.ok) {
+      await setSessionCookie(outcome.value.token, outcome.value.expiresAt);
+      destination = outcome.value.redirectTo;
+    } else if (outcome.reasonCode === "session_invalid") {
+      destination = "/login?reason=signed_out";
+    }
+  } catch (error) {
+    // A tampered role value: already audited by the kernel. Go back to the current home.
+    if (!(error instanceof ValidationError)) throw error;
+  }
+  redirect(destination);
 }

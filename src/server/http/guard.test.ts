@@ -19,6 +19,8 @@ vi.mock("./cookies", () => ({ sessionTokenFromCookie: async () => "token" }));
 vi.mock("./context", () => ({ requestContext: async () => ({ actor: { kind: "anonymous" } }) }));
 
 const { LOCKED_PATH, requireRole, requireSignedIn } = await import("./guard");
+const { ROLES } = await import("@/server/permissions/roles");
+const { ROLE_HOME } = await import("@/server/auth/stage");
 
 function session(status: CurrentSession["status"], role: CurrentSession["role"] = "doctor"): CurrentSession {
   return {
@@ -71,4 +73,15 @@ describe("page guards (D-025)", () => {
     readSession.mockResolvedValue(session("active", "nurse"));
     expect(await redirectOf(requireRole("doctor"))).toBe("/nurse");
   });
+});
+
+describe("role pages × roles (generated)", () => {
+  for (const page of ROLES) {
+    for (const role of ROLES) {
+      it(`${role} on the ${page} page: ${role === page ? "allowed" : `sent to ${ROLE_HOME[role]}`}`, async () => {
+        readSession.mockResolvedValue(session("active", role));
+        expect(await redirectOf(requireRole(page))).toBe(role === page ? null : ROLE_HOME[role]);
+      });
+    }
+  }
 });

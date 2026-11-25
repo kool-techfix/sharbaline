@@ -65,7 +65,7 @@ for (const user of Object.values(E2E_USERS)) {
         staffId: user.staffId,
         email: null,
         displayName: user.displayName,
-        roles: [user.role],
+        roles: [user.role, ...("extraRoles" in user ? user.extraRoles : [])],
         password: E2E_PASSWORD,
         mustChangePassword: false,
       },

@@ -193,7 +193,7 @@ Implements the M1 decisions (Argon2id, 10-character minimum with a common-passwo
 - **TOTP:** SHA-1, 6 digits, 30 s, ±1 step. Replay is blocked by storing the last accepted step under a row lock, so two simultaneous uses of one code let exactly one through. Secrets are AES-256-GCM encrypted with the user ID as associated data, and the key is versioned.
 - **Recovery codes:** 10 Crockford-base32 characters (50 bits), formatted `XXXXX-XXXXX`. Stored as HMAC-SHA256 bound to the user. Redeemed by one atomic UPDATE, so of two simultaneous uses exactly one succeeds. When ≤ 2 remain, the user is told to ask for a reset.
 - **Stage order after the password:** second factor (if enrolled) → temporary-password change → forced enrollment (if any of the user's roles requires MFA; proposal d) → active. Each step has a 5-minute deadline (15 for enrollment) and **issues a new session token**.
-- **Multi-role users** land on their first role in the order admin → doctor → pharmacist → nurse → lab → front_desk. Role switching comes with user management.
+- **Multi-role users** land on their first role in the order admin → doctor → pharmacist → nurse → lab → front_desk. Role switching: D-026.
 - **Admin account services** (revoke sessions, disable, temporary password, unlock, reset MFA) exist with tests; their screens come with the user-management slice. The last active admin can't be disabled, and admins can't disable themselves or reset their own MFA.
 - **First admin:** `pnpm admin:bootstrap` on the server console. It refuses once any active admin exists (runbook: `docs/runbooks/admin-bootstrap.md`).
 - **Optional MFA for other roles:** there's no self-enrollment screen yet. Add it with the user-settings work.
@@ -230,3 +230,33 @@ In Next.js a layout does **not** re-run when moving between pages under it, so t
 **Locked sessions are refused by the page guard too** (2026-11-24, post-merge review of M1). `requireRole()` and `requireSignedIn()` redirect an idle-locked session to `/locked`. Only the staff layout and the `/locked` page pass `allowLocked`, and both render nothing but the lock screen. Before this, the guards let locked sessions through and only the layout swapped the page for the lock screen. On a soft navigation Next.js fetches just the page, so a page would have rendered its data for a locked session. On a full load the layout leaves the page out, so the URL stays put and the lock screen shows in place. After unlocking from `/locked`, the user lands on their role's home.
 
 A related Next.js behaviour: setting a cookie in a server action re-renders the current page on the server. Pages in the middle of a sign-in flow (`/login`, `/mfa/enroll`) therefore don't redirect away when the session becomes active during the flow; the client flow navigates once it has shown what it must (recovery codes, low-codes warning). E2E tests cover both. This was found by them: the first version skipped the recovery-code screen.
+
+## D-026 · Role-based navigation and role switching
+2026-11-25 · Accepted · Project lead
+
+- The staff layout has a shared `Sidebar` (`src/components/Sidebar.tsx`). Its links come from `navFor(role)` for the session's **active role**. Hiding links is only convenience: every page still checks the role (D-025).
+- Staff with more than one role see **one button per other role**. A switch is a plain form post to the `auth.role_switch` service:
+  - Accepted only for an active, unlocked session and a role the account holds.
+  - The active role decides every permission check, so a switch is a privilege change. It **issues a new session token** and is audited under the new role with `from_role` and `to_role`.
+  - It lands on the new role's home page.
+- Sign-in still starts in the first role by priority (D-022).
+
+## D-027 · Generated permission-matrix tests
+2026-11-25 · Accepted · Project lead
+
+- `defineService` attaches `meta` (action and permission) to every service. `tests/permission-matrix` imports every module under `src/server/services` and runs **each role plus an anonymous caller** against each protected service:
+  - Roles the matrix denies must get `ForbiddenError` and exactly one `denied` audit entry.
+  - Allowed roles must get past the role check.
+- `tests/permission-matrix/fixtures.ts` gives each protected service its **expected permission** and a valid input. The suite fails when a protected service has no fixture, when a service's permission differs from its fixture, or when a public service isn't listed in `PUBLIC_SERVICES` with a reason. Adding a service or changing its access is therefore always visible in review.
+- Pages: a generated test checks every role against every role page (`requireRole`). A static test checks that every page under `(staff)` calls a guard itself, and that every API route checks the session or is listed as public.
+
+## D-028 · Break-glass is built right after M2
+2026-11-25 · Accepted · Project lead
+
+Break-glass opens one **patient's** clinical record with a reason, flagged for review (scope §4.1, §5 M1). Its events reference `patient_id`, and no patient or clinical tables exist until M2. It is therefore built as its own slice **immediately after M2**:
+- the event and review tables, with a real foreign key
+- kernel support for break-glass access
+- a reason dialog on the patient page
+- an admin review screen
+
+M1 is complete apart from this item. Until it ships, admin has no clinical access at all, which is the safe default.
