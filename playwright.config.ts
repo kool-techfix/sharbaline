@@ -15,6 +15,14 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  // Signs in once before any test, so the cold start (password hashing, server actions,
+  // database pool) isn't charged to whichever test happens to run first.
+  globalSetup: "./tests/e2e/global-setup.ts",
+  // A production build on a modest hospital laptop, with several workers signing in at once
+  // (each sign-in is a deliberately slow Argon2 check): 10 s per assertion, 60 s per test.
+  // Only the waiting changes; every assertion stays the same.
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
   use: {
     baseURL,
     trace: "retain-on-failure",
