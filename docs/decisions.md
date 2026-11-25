@@ -318,3 +318,53 @@ Completes M1 apart from break-glass (D-028). All of it runs through kernel servi
 **Guard.** `serverEnv()` refuses to start in production unless `DATABASE_URL` connects as `hms_app`, so this database (or any owner or superuser login) can never serve real use.
 
 **Never** put real patient or staff data in it (CLAUDE.md rule 1).
+
+## D-032 · Patient registry rules (M2)
+2026-11-25 · Accepted · Project lead
+
+**Permissions.** A `queue` resource is added to the matrix (scope §4.1):
+- Front desk creates entries.
+- Front desk, nurses and doctors read and update them.
+- Admin, lab and pharmacist get no access.
+
+In M2 the only status change is "left"; nurse and doctor statuses come with M3.
+
+**Patient numbers (D-003)**
+- They come from the `patient_number_seq` sequence, starting at 1000. The app appends the Damm check digit inside the registration transaction; gaps after a rollback are harmless.
+- The prefix is the `hospital_setting` row `patient_number_prefix`, currently the **placeholder `HSP`**. It must be set to the hospital's own prefix **before go-live**, because issued numbers never change. An admin screen for it comes with M7.
+- A trigger keeps the number, sequence and registration facts unchanged for every login.
+
+**What is recorded**
+- **Name:** surname, first name and other names, plus a normalised `name_search` (accents removed, so "Adébáyọ̀" matches "Adebayo") with a trigram index.
+- **Sex:** female or male.
+- **Date of birth:** exact, or an age in years stored as 1 July of that year and marked estimated. An edit that keeps the same age keeps the stored date.
+- **Phone:** optional, Nigerian only, stored as E.164.
+- **Address, legacy card number, next of kin:** address and legacy card number are optional. Next of kin is name, relationship and optional phone; it can be changed but not removed.
+- **Consent:** recorded with version **`draft-1`**, a placeholder until the hospital supplies its NDPA wording. It must change before go-live.
+- **Photo:** not collected until the client confirms. The column exists.
+
+**Duplicates**
+- Candidates are narrowed in the database (name trigrams, same phone, or same date of birth with a weaker name match), then scored by `lib/domain/duplicates.ts`: 0.5 × name similarity + 0.3 × date of birth + 0.2 × phone.
+- A score of **0.6 or more** warns. The same phone alone (families) or the same date of birth alone (strangers) never reaches it.
+- The server checks again at registration and refuses unless every current match was confirmed as a different person. Each confirmation is kept in `duplicate_override` (append-only) and audited, and the new record points at the strongest match (`possible_duplicate_of_id`).
+
+**Search**
+- By patient number (with or without prefix; a wrong check digit gets "check the number"), phone (any format), legacy card number (any case), or name (fuzzy: typos, partial names, accents). Up to 20 results.
+- **Lab and pharmacist** get identity only (name, age, sex, patient number) and **can't search by phone**, since a match would reveal the number (D-004, D-008).
+- Every search and view is audited with the patient ids returned; search text never is.
+
+**Edits** are refused if the record changed since it was read (`changed_elsewhere`), so nobody silently overwrites a colleague. The audit lists changed field names, never values.
+
+**Never deleted.** Triggers block DELETE and TRUNCATE on `patient`, `next_of_kin` and `queue_entry` for every login, including the shared test database's superuser (D-031). A patient who leaves the queue is marked `left`.
+
+**Database setup.** `pg_trgm` is created by `deploy/postgres/init/02-database.sql` as a superuser, because `hms_owner` can't create extensions. The migration repeats it with `IF NOT EXISTS`. The migration check ignores extension-owned functions.
+
+**Performance.** `pnpm perf:patient-search` loads 100,000 synthetic patients into a throwaway PostgreSQL 18 and times real searches. On the dev laptop every kind of search is under 600 ms at p95 (number, phone and legacy card under 25 ms). The verdict for go-live comes from the reference hardware (slice 9).
+
+**On hold** (project lead, 2026-11-25): QR scanning and CR80 card printing. The QR code will hold the patient number only, as before.
+
+**Design deviations** (D-021), for the front desk screens:
+- No "Recent patients" table on the landing page, which would show patients' phone numbers before any search.
+- No notification bell, no "Last synced" time (it comes with offline sync in slice 8), and no Active/Follow-up status. None is defined in scope.
+- Structured name and next-of-kin fields instead of single text boxes.
+- No card preview, since printing is on hold; the design's card also showed a phone number.

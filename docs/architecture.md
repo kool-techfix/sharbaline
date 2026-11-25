@@ -125,7 +125,7 @@ DuplicateOverride [AO]  id, new_patient_id, suspected_patient_id, score, confirm
 QueueEntry        id, patient_id, queue_date (Lagos), position,
                   status (waiting|with_nurse|waiting_doctor|with_doctor|done|left), updated_at
 ```
-Search: patient number (with or without prefix, check digit validated), `legacy_card_number`, phone, or trigram name match. Duplicate scoring (name similarity + DOB with tolerance if estimated + phone) is a pure function in `lib/domain`.
+Search: patient number (with or without prefix, check digit validated), `legacy_card_number`, phone, or trigram name match. Duplicate scoring (name similarity + DOB with tolerance if estimated + phone) is a pure function in `lib/domain`. As built in M2 (D-032): `phone_e164`; `updated_by_id`; `hospital_setting` holds `patient_number_prefix`; `PatientAllergy` arrives with M3; patient, next-of-kin and queue rows have delete-blocking triggers.
 
 ### 2.4 Visits, vitals, notes
 ```
