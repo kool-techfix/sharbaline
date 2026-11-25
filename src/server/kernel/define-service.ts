@@ -45,7 +45,18 @@ export interface ServiceDefinition<S extends z.ZodType, T> {
   run: (args: RunArgs<z.output<S>>) => Promise<Outcome<T>>;
 }
 
-export type Service<T> = (ctx: RequestContext, rawInput: unknown, database?: Db) => Promise<Outcome<T>>;
+/**
+ * What a service declares about access. Attached to every service so the permission-matrix
+ * suite (tests/permission-matrix) can find each one and test every role against it.
+ */
+export interface ServiceMeta {
+  action: string;
+  permission: Permission | PublicAccess;
+}
+
+export type Service<T> = ((ctx: RequestContext, rawInput: unknown, database?: Db) => Promise<Outcome<T>>) & {
+  readonly meta: ServiceMeta;
+};
 
 /**
  * The single write path (CLAUDE.md rules 4–5). Every service, read or write, goes through:
@@ -57,7 +68,7 @@ export type Service<T> = (ctx: RequestContext, rawInput: unknown, database?: Db)
 export function defineService<S extends z.ZodType, T>(def: ServiceDefinition<S, T>): Service<T> {
   const isPublic = "public" in def.permission;
 
-  return async function service(ctx, rawInput, database = defaultDb()) {
+  const service = async function service(ctx: RequestContext, rawInput: unknown, database: Db = defaultDb()) {
     const base = { action: def.action, resourceType: def.audit.resourceType };
 
     const permitted =
@@ -124,6 +135,7 @@ export function defineService<S extends z.ZodType, T>(def: ServiceDefinition<S, 
       throw error;
     }
   };
+  return Object.assign(service, { meta: { action: def.action, permission: def.permission } }) as Service<T>;
 }
 
 /** Audit entries for requests that never reach (or roll back) the main transaction. */

@@ -134,7 +134,7 @@ Run lint and tests before declaring any task done.
 - Every service is built with `defineService` (`src/server/kernel`, D-017): it checks the role, validates with Zod, runs in a transaction and writes the audit entry. Return `fail(...)` for expected failures (the transaction commits); throw only for real errors (it rolls back).
 - Every service mutation: integration test covering permission allowed/denied, validation failure, audit entry written, transaction rollback on failure. Use `createTestDatabase()` and `userContext()` from `tests/integration/helpers`.
 - Every new append-only table: attach `forbid_mutation()` triggers and revoke UPDATE/DELETE/TRUNCATE from `hms_app` in its migration (see the audit_log migration).
-- Permission matrix: automated test for each role × protected resource.
+- Permission matrix: generated tests run every role against every service (D-027). A new protected service needs its expected permission and a valid input in `tests/permission-matrix/fixtures.ts`; a new public service needs a reason in `PUBLIC_SERVICES`. The suite fails until you add them.
 - Stock: unit tests for arithmetic, a concurrency test for simultaneous dispensing, and the ledger-sum invariant.
 - E2E (Playwright): registration → consultation → prescription → dispensing; lab order → result; behavior when the server is unreachable.
 - Do not weaken or delete a failing test to make it pass. Fix the cause or ask.

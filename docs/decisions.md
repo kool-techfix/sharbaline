@@ -241,3 +241,12 @@ A related Next.js behaviour: setting a cookie in a server action re-renders the 
   - It lands on the new role's home page.
 - Sign-in still starts in the first role by priority (D-022).
 
+## D-027 · Generated permission-matrix tests
+2026-11-25 · Accepted · Project lead
+
+- `defineService` attaches `meta` (action and permission) to every service. `tests/permission-matrix` imports every module under `src/server/services` and runs **each role plus an anonymous caller** against each protected service:
+  - Roles the matrix denies must get `ForbiddenError` and exactly one `denied` audit entry.
+  - Allowed roles must get past the role check.
+- `tests/permission-matrix/fixtures.ts` gives each protected service its **expected permission** and a valid input. The suite fails when a protected service has no fixture, when a service's permission differs from its fixture, or when a public service isn't listed in `PUBLIC_SERVICES` with a reason. Adding a service or changing its access is therefore always visible in review.
+- Pages: a generated test checks every role against every role page (`requireRole`). A static test checks that every page under `(staff)` calls a guard itself, and that every API route checks the session or is listed as public.
+
