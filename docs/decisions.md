@@ -250,3 +250,13 @@ A related Next.js behaviour: setting a cookie in a server action re-renders the 
 - `tests/permission-matrix/fixtures.ts` gives each protected service its **expected permission** and a valid input. The suite fails when a protected service has no fixture, when a service's permission differs from its fixture, or when a public service isn't listed in `PUBLIC_SERVICES` with a reason. Adding a service or changing its access is therefore always visible in review.
 - Pages: a generated test checks every role against every role page (`requireRole`). A static test checks that every page under `(staff)` calls a guard itself, and that every API route checks the session or is listed as public.
 
+## D-028 · Break-glass is built right after M2
+2026-11-25 · Accepted · Project lead
+
+Break-glass opens one **patient's** clinical record with a reason, flagged for review (scope §4.1, §5 M1). Its events reference `patient_id`, and no patient or clinical tables exist until M2. It is therefore built as its own slice **immediately after M2**:
+- the event and review tables, with a real foreign key
+- kernel support for break-glass access
+- a reason dialog on the patient page
+- an admin review screen
+
+M1 is complete apart from this item. Until it ships, admin has no clinical access at all, which is the safe default.
