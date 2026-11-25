@@ -11,6 +11,7 @@ const valid = {
 };
 const production = {
   ...valid,
+  DATABASE_URL: "postgresql://hms_app:not-a-real-secret@10.0.0.5:5432/hms",
   NODE_ENV: "production",
   INTERNET_PROBE_URL: "https://example.org/",
   TRUST_PROXY_HEADERS: "true",
@@ -55,6 +56,17 @@ describe("parseServerEnv", () => {
   it("requires trusted proxy headers in production, so per-IP limits and audit see real addresses", () => {
     expect(() => parseServerEnv({ ...production, TRUST_PROXY_HEADERS: undefined })).toThrow(/TRUST_PROXY_HEADERS/);
     expect(() => parseServerEnv({ ...production, TRUST_PROXY_HEADERS: "false" })).toThrow(/TRUST_PROXY_HEADERS/);
+  });
+
+  it("requires the restricted hms_app role in production (D-016, D-031)", () => {
+    for (const user of ["hms_owner", "postgres", "prisma_migration"]) {
+      expect(() => parseServerEnv({ ...production, DATABASE_URL: `postgresql://${user}:x@10.0.0.5:5432/hms` })).toThrow(
+        /DATABASE_URL/,
+      );
+    }
+    expect(parseServerEnv(production).DATABASE_URL).toContain("hms_app");
+    // Development and tests may use other logins, e.g. the shared test database.
+    expect(parseServerEnv({ ...valid, DATABASE_URL: "postgresql://prisma_migration:x@db.example.test/db" })).toBeTruthy();
   });
 
   it("does not trust proxy headers unless told to", () => {
