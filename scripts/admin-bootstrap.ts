@@ -9,6 +9,7 @@ import "dotenv/config";
 import { parseArgs } from "node:util";
 import { uuidv7 } from "@/lib/ids";
 import { createDb } from "@/server/db/client";
+import { ValidationError } from "@/server/kernel/errors";
 import { bootstrapAdmin } from "@/server/services/users/bootstrap";
 
 // pnpm forwards a literal "--" if the caller types one; accept both forms.
@@ -46,6 +47,15 @@ try {
     console.log(`  Temporary password: ${outcome.value.temporaryPassword}`);
     console.log("Hand this over in person. It must be changed at first sign-in, then an authenticator is set up.");
   }
+} catch (error) {
+  if (!(error instanceof ValidationError)) throw error;
+  const fields = new Set(error.issues.map((issue) => issue.path));
+  if (fields.has("staffId")) {
+    console.error("Invalid staff ID: use 3-64 letters, digits, dots, hyphens or underscores, starting and ending with a letter or digit.");
+  }
+  if (fields.has("email")) console.error("Invalid email address.");
+  if (fields.has("displayName")) console.error("Invalid name: use 1-120 characters.");
+  process.exitCode = 2;
 } finally {
   await db.$disconnect();
 }

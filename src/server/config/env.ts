@@ -57,6 +57,12 @@ const schema = z
     path: ["APP_ORIGIN"],
     message: "must be https in production (http allowed only for localhost)",
   })
+  // Production always runs behind the proxy (D-022). Without trusted headers every client has no
+  // IP, so audit loses "from where" and the per-IP throttle can't tell staff apart.
+  .refine((env) => env.NODE_ENV !== "production" || env.TRUST_PROXY_HEADERS, {
+    path: ["TRUST_PROXY_HEADERS"],
+    message: "must be true in production (the app is reachable only through the proxy)",
+  })
   // Without a probe the server cannot tell "Online" from "Working offline" (scope §7.1).
   .refine((env) => env.NODE_ENV !== "production" || env.INTERNET_PROBE_URL !== undefined, {
     path: ["INTERNET_PROBE_URL"],

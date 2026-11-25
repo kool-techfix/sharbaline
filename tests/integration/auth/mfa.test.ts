@@ -106,6 +106,37 @@ describe("TOTP step", () => {
     expect(fresh).toMatchObject({ ok: false, reasonCode: "locked" });
   });
 
+  it("keeps counting wrong codes across fresh password sign-ins (no reset by the password)", async () => {
+    const { user, secret } = await enrolledDoctor();
+    const wrong = totpNow(secret) === "000000" ? "111111" : "000000";
+    const first = await passwordStep(user);
+    for (let i = 0; i < 4; i++) {
+      expect(await verify(first, wrong)).toMatchObject({ ok: false, reasonCode: "invalid_code" });
+    }
+    // Signing in again with the correct password must not give the attacker 4 more guesses.
+    const second = await passwordStep(user);
+    expect(await verify(second, wrong)).toMatchObject({ ok: false, reasonCode: "locked" });
+    expect((await readSession(second, anonymousContext(), t.db))?.status).toBe("revoked");
+  });
+
+  it("counts wrong codes toward the per-IP throttle", async () => {
+    const ip = "192.0.2.77";
+    const doctors = await Promise.all(Array.from({ length: 8 }, () => enrolledDoctor()));
+    for (const { user, secret } of doctors) {
+      const wrong = totpNow(secret) === "000000" ? "111111" : "000000";
+      const token = await passwordStep(user);
+      for (let i = 0; i < 4; i++) await verify(token, wrong, anonymousContext({ ip }));
+    }
+    // 32 second-factor failures from one address: its password step is now refused outright.
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const outcome = await login(
+      anonymousContext({ ip }),
+      { identifier: nurse.staffId, password: nurse.password, deviceId: uuidv7(), userAgent: null },
+      t.db,
+    );
+    expect(outcome).toMatchObject({ ok: false, reasonCode: "rate_limited" });
+  });
+
   it("gives up after the 5-minute step deadline", async () => {
     const { user, secret } = await enrolledDoctor();
     const token = await passwordStep(user);

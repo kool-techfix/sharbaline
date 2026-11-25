@@ -15,9 +15,14 @@ import {
   createSession,
   findUserByIdentifier,
   lockThrottle,
+  pruneThrottle,
   saveThrottle,
   upsertDevice,
 } from "./shared";
+
+/** Expired throttle rows are swept from sign-in itself: no scheduler needed on the server. */
+const THROTTLE_PRUNE_INTERVAL_MS = 5 * 60_000;
+let lastThrottlePruneMs = 0;
 
 export interface LoginResult {
   sessionId: string;
@@ -43,6 +48,11 @@ export const login = defineService({
   permission: { public: true, reason: "Signing in is how a caller establishes who they are." },
   async run({ tx, input, ctx }) {
     const now = new Date();
+    // Before taking any throttle row lock, and SKIP LOCKED inside, so it never waits or deadlocks.
+    if (now.getTime() - lastThrottlePruneMs >= THROTTLE_PRUNE_INTERVAL_MS) {
+      lastThrottlePruneMs = now.getTime();
+      await pruneThrottle(tx, now);
+    }
 
     if (ipIsThrottled(ctx.ip, now.getTime())) {
       await burnPasswordCheck(input.password);
@@ -96,15 +106,18 @@ export const login = defineService({
     const role = primaryRole(user.roles);
     if (!role) return fail<LoginResult>("no_role", "auth.error.noRole", { auditActor: actor });
 
-    await clearThrottle(tx, key, now);
-    await upsertDevice(tx, input.deviceId, input.userAgent, now);
-
     const stage = nextStage({
       roles: user.roles,
       mfaEnrolled: user.activeMfa !== null,
       mfaVerified: false,
       mustChangePassword: user.mustChangePassword,
     });
+    // With a second factor still to prove, keep the count: wrong codes add to it, and clearing
+    // it here would let anyone holding the password guess codes forever, 4 per sign-in.
+    // A successful code clears it (mfa.ts).
+    if (stage !== "mfa_pending") await clearThrottle(tx, key);
+    await upsertDevice(tx, input.deviceId, input.userAgent, now);
+
     const session = await createSession(tx, {
       userId: user.id,
       role,

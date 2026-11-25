@@ -19,7 +19,7 @@ import {
 } from "@/server/services/users/admin";
 import { bootstrapAdmin } from "@/server/services/users/bootstrap";
 import { ROLES } from "@/server/permissions/roles";
-import { ForbiddenError } from "@/server/kernel/errors";
+import { ForbiddenError, ValidationError } from "@/server/kernel/errors";
 import { anonymousContext, userContext } from "../helpers/context";
 import { auditFor, enrollTotp, makeUser, type TestUser } from "../helpers/auth";
 import { createTestDatabase, type TestDatabase } from "../helpers/db";
@@ -76,6 +76,36 @@ describe("idle lock and unlock", () => {
     await touchSession(token, "activity", t.db);
     vi.setSystemTime(Date.now() + 6 * 60_000);
     expect(await status(token)).toBe("active");
+  });
+
+  it("activity reported after the idle limit doesn't revive the session (server lock holds)", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const { token } = await signIn(nurse);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Browser closed; nothing reads the session for 30 minutes, so it isn't marked locked yet.
+    vi.setSystemTime(Date.now() + 30 * 60_000);
+    await touchSession(token, "activity", t.db);
+    expect(await status(token)).toBe("locked");
+  });
+
+  it("activity can't extend a session past its 12-hour lifetime or for a disabled user", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const { token, sessionId } = await signIn(nurse);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 12 * 60 * 60_000 + 1000);
+    await touchSession(token, "activity", t.db);
+    const expired = await t.appPool.query("SELECT last_activity_at FROM session WHERE id = $1", [sessionId]);
+    expect(expired.rows[0].last_activity_at.getTime()).toBeLessThan(Date.now() - 60 * 60_000);
+    vi.useRealTimers();
+
+    const lab = await makeUser(t, { roles: ["lab"] });
+    const second = await signIn(lab);
+    await t.ownerPool.query('UPDATE "user" SET disabled_at = now() WHERE id = $1', [lab.id]);
+    const before = await t.appPool.query("SELECT last_activity_at FROM session WHERE id = $1", [second.sessionId]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await touchSession(second.token, "activity", t.db);
+    const after = await t.appPool.query("SELECT last_activity_at FROM session WHERE id = $1", [second.sessionId]);
+    expect(after.rows[0].last_activity_at).toEqual(before.rows[0].last_activity_at);
   });
 
   it("unlocks with the password, rotating the token", async () => {
@@ -148,6 +178,31 @@ describe("sign-out, revocation and disabling", () => {
       ok: false,
       reasonCode: "last_admin",
     });
+  });
+});
+
+describe("last-admin guard under concurrency", () => {
+  it("two admins disabling each other at the same moment leave one of them active", async () => {
+    const { rows } = await t.appPool.query(
+      `SELECT u.id FROM "user" u JOIN user_role r ON r.user_id = u.id
+        WHERE r.role = 'admin' AND u.disabled_at IS NULL`,
+    );
+    for (const row of rows) await t.ownerPool.query('UPDATE "user" SET disabled_at = now() WHERE id = $1', [row.id]);
+    const [a, b] = [await makeUser(t, { roles: ["admin"] }), await makeUser(t, { roles: ["admin"] })];
+    const as = (admin: TestUser) =>
+      userContext("admin", { actor: { kind: "user", userId: admin.id, role: "admin", sessionId: uuidv7() } });
+
+    const results = await Promise.all([
+      disableUser(as(a), { userId: b.id }, t.db),
+      disableUser(as(b), { userId: a.id }, t.db),
+    ]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok && r.reasonCode === "last_admin")).toHaveLength(1);
+    const active = await t.appPool.query(
+      `SELECT count(*)::int AS n FROM "user" WHERE id = ANY($1) AND disabled_at IS NULL`,
+      [[a.id, b.id]],
+    );
+    expect(active.rows[0].n).toBe(1);
   });
 });
 
@@ -225,10 +280,60 @@ describe("permissions: account administration is admin-only (role × action)", (
 });
 
 describe("first-admin bootstrap", () => {
+  // Runs against a database with no active admin; each test restores that state first.
+  async function withoutActiveAdmins() {
+    await t.ownerPool.query(
+      `UPDATE "user" SET disabled_at = now()
+        WHERE disabled_at IS NULL AND id IN (SELECT user_id FROM user_role WHERE role = 'admin')`,
+    );
+  }
+  const input = (staffId: string) => ({ staffId, email: null, displayName: "First Admin" });
+
+  it("creates the first admin with a temporary password, and audits it without the password", async () => {
+    await withoutActiveAdmins();
+    const ctx = anonymousContext();
+    const outcome = await bootstrapAdmin(ctx, input("  First.Admin "), t.db);
+    expect(outcome).toMatchObject({ ok: true });
+    if (!outcome.ok) return;
+    const { rows } = await t.appPool.query(
+      `SELECT u.staff_id, u.must_change_password, r.role FROM "user" u JOIN user_role r ON r.user_id = u.id WHERE u.id = $1`,
+      [outcome.value.userId],
+    );
+    expect(rows).toEqual([{ staff_id: "first.admin", must_change_password: true, role: "admin" }]);
+    const audit = await auditFor(t, ctx.requestId);
+    expect(audit).toMatchObject([
+      { action: "users.bootstrap_admin", outcome: "success", resource_id: outcome.value.userId },
+    ]);
+    expect(JSON.stringify(audit)).not.toContain(outcome.value.temporaryPassword);
+  });
+
   it("refuses once an admin exists", async () => {
     await makeUser(t, { roles: ["admin"] });
-    expect(
-      await bootstrapAdmin(anonymousContext(), { staffId: "first.admin", email: null, displayName: "First Admin" }, t.db),
-    ).toMatchObject({ ok: false, reasonCode: "admin_exists" });
+    expect(await bootstrapAdmin(anonymousContext(), input("second.admin"), t.db)).toMatchObject({
+      ok: false,
+      reasonCode: "admin_exists",
+    });
+  });
+
+  it("rejects a malformed staff ID as a validation failure, audited, before touching the database", async () => {
+    await withoutActiveAdmins();
+    for (const staffId of ["dr ade", "-admin", "ab", "admin!"]) {
+      const ctx = anonymousContext();
+      await expect(bootstrapAdmin(ctx, input(staffId), t.db)).rejects.toBeInstanceOf(ValidationError);
+      expect(await auditFor(t, ctx.requestId)).toMatchObject([{ action: "users.bootstrap_admin", outcome: "failure" }]);
+    }
+  });
+
+  it("rolls back entirely when the insert fails (staff ID already taken)", async () => {
+    await withoutActiveAdmins();
+    const existing = await makeUser(t, { roles: ["nurse"] });
+    const ctx = anonymousContext();
+    await expect(bootstrapAdmin(ctx, input(existing.staffId), t.db)).rejects.toThrow();
+    const { rows } = await t.appPool.query(
+      `SELECT count(*)::int AS n FROM "user" u JOIN user_role r ON r.user_id = u.id
+        WHERE r.role = 'admin' AND u.disabled_at IS NULL`,
+    );
+    expect(rows[0].n).toBe(0);
+    expect(await auditFor(t, ctx.requestId)).toMatchObject([{ action: "users.bootstrap_admin", outcome: "error" }]);
   });
 });

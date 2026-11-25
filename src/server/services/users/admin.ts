@@ -6,7 +6,7 @@ import { throttleKey } from "@/server/auth/identifiers";
 import { authHmacKey } from "@/server/auth/keys";
 import { hashPassword } from "@/server/auth/password";
 import { newTemporaryPassword } from "@/server/auth/tokens";
-import { clearThrottle, lockThrottle, revokeUserSessions } from "@/server/services/auth/shared";
+import { clearThrottle, revokeUserSessions } from "@/server/services/auth/shared";
 
 /*
  * Admin account actions (scope §4.1: users C R U = admin). The admin screens arrive with the
@@ -49,12 +49,18 @@ export const disableUser = defineService({
     if (!user) return fail("not_found", "users.error.notFound");
     if (user.disabledAt) return ok(null);
 
-    // Never leave the hospital without an administrator.
+    // Never leave the hospital without an administrator. Lock every active admin row before
+    // counting: a plain count lets two admins disable each other at the same moment, each
+    // seeing the other as still active. Locked in id order so concurrent callers can't deadlock;
+    // a waiter re-reads the rows after the first commits and no longer counts a disabled admin.
     if (user.roles.some((r) => r.role === "admin")) {
-      const otherAdmins = await tx.user.count({
-        where: { id: { not: user.id }, disabledAt: null, roles: { some: { role: "admin" } } },
-      });
-      if (otherAdmins === 0) return fail("last_admin", "users.error.lastAdmin");
+      const activeAdmins = await tx.$queryRaw<{ id: string }[]>`
+        SELECT u.id FROM "user" u
+          JOIN user_role r ON r.user_id = u.id AND r.role = 'admin'
+         WHERE u.disabled_at IS NULL
+         ORDER BY u.id
+           FOR UPDATE OF u`;
+      if (!activeAdmins.some((admin) => admin.id !== user.id)) return fail("last_admin", "users.error.lastAdmin");
     }
 
     await tx.user.update({ where: { id: user.id }, data: { disabledAt: now } });
@@ -82,9 +88,7 @@ export const issueTemporaryPassword = defineService({
       data: { passwordHash: await hashPassword(temporaryPassword), mustChangePassword: true, passwordChangedAt: now },
     });
     await revokeUserSessions(tx, user.id, "password_reset", now, { byUserId: actorUserId(ctx) });
-    const key = throttleKey(authHmacKey(), { userId: user.id });
-    await lockThrottle(tx, key);
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, throttleKey(authHmacKey(), { userId: user.id }));
     return ok({ temporaryPassword });
   },
   audit: { resourceType: "user", resourceId: (input) => input.userId },
@@ -96,10 +100,7 @@ export const unlockAccount = defineService({
   input: target,
   permission: { resource: "users", action: "update" },
   async run({ tx, input }): Promise<Outcome<null>> {
-    const now = new Date();
-    const key = throttleKey(authHmacKey(), { userId: input.userId });
-    await lockThrottle(tx, key);
-    await clearThrottle(tx, key, now);
+    await clearThrottle(tx, throttleKey(authHmacKey(), { userId: input.userId }));
     return ok(null);
   },
   audit: { resourceType: "user", resourceId: (input) => input.userId },
