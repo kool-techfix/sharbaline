@@ -57,6 +57,13 @@ const schema = z
     path: ["APP_ORIGIN"],
     message: "must be https in production (http allowed only for localhost)",
   })
+  // Least privilege (D-016): production connects as the restricted runtime role, never as a
+  // schema owner or superuser. This also keeps the single-login shared TEST database (D-031)
+  // from ever being used for real.
+  .refine((env) => env.NODE_ENV !== "production" || new URL(env.DATABASE_URL).username === "hms_app", {
+    path: ["DATABASE_URL"],
+    message: "must connect as hms_app in production",
+  })
   // Production always runs behind the proxy (D-022). Without trusted headers every client has no
   // IP, so audit loses "from where" and the per-IP throttle can't tell staff apart.
   .refine((env) => env.NODE_ENV !== "production" || env.TRUST_PROXY_HEADERS, {
