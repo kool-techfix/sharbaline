@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useConnection } from "@/components/connection/ConnectionProvider";
 import { t, tPlural } from "@/lib/i18n";
 import { cancelSignIn, signIn, submitRecoveryCode, submitTotpCode } from "../../actions";
-import { CodeInput } from "../../_components/CodeInput";
+import { CodeInput } from "@/components/CodeInput";
 import { ServerUnreachable } from "../../_components/ServerUnreachable";
 import { StepHeading } from "../../_components/StepHeading";
 

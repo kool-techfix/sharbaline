@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useConnection } from "@/components/connection/ConnectionProvider";
 import { t } from "@/lib/i18n";
 import { beginEnrollment, finishEnrollment } from "../../../actions";
-import { CodeInput } from "../../../_components/CodeInput";
+import { CodeInput } from "@/components/CodeInput";
 import { ServerUnreachable } from "../../../_components/ServerUnreachable";
 import { StepHeading } from "../../../_components/StepHeading";
 
