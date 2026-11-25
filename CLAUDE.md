@@ -58,6 +58,7 @@ pnpm db:migrate:down    # roll back the latest migration (dev only)
 pnpm db:migrate:check   # every migration goes up, down, up cleanly (runs in CI)
 pnpm db:seed            # load SYNTHETIC seed data: one demo user per role (refuses in production)
 pnpm admin:bootstrap    # create the FIRST admin on a new install (runbook: docs/runbooks/admin-bootstrap.md)
+pnpm admin:recover      # last resort: the ONLY admin lost their authenticator (runbook: docs/runbooks/lost-mfa-device.md)
 docker compose up       # full on-site stack [TODO: deploy PR]
 ```
 
