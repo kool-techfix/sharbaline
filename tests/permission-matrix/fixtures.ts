@@ -65,5 +65,7 @@ export const PUBLIC_SERVICES: Record<string, string> = {
   "auth.logout": "ending one's own session",
   "auth.idle_lock": "locking only reduces access",
   "auth.role_switch": "own session, only to a role the account holds",
+  "auth.mfa_self_enroll_start": "own account only; needs the session token and the account password",
+  "auth.mfa_self_enroll": "own account only; needs a setup started with the password",
   "users.bootstrap_admin": "server-console first admin; refuses once an admin exists",
 };

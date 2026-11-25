@@ -4,15 +4,18 @@ import { resetIpThrottle } from "@/server/auth/ip-throttle";
 import { login } from "@/server/services/auth/login";
 import {
   confirmMfaEnrollment,
+  confirmOwnMfaEnrollment,
   startMfaEnrollment,
+  startOwnMfaEnrollment,
   redeemRecoveryCode,
   verifyTotpCode,
 } from "@/server/services/auth/mfa";
-import { readSession } from "@/server/services/auth/session";
+import { lockIdleSession, readSession } from "@/server/services/auth/session";
 import { anonymousContext } from "../helpers/context";
 import { auditFor, enrollTotp, makeUser, totpNow, type TestUser } from "../helpers/auth";
 import { createTestDatabase, type TestDatabase } from "../helpers/db";
 import { codeForStep, timeStep } from "@/server/auth/totp";
+import { Secret } from "otpauth";
 
 let t: TestDatabase;
 beforeAll(async () => {
@@ -222,5 +225,85 @@ describe("first-login enrollment", () => {
       { status: "pending", n: 1 },
       { status: "revoked", n: 1 },
     ]);
+  });
+});
+
+describe("optional authenticator from My account", () => {
+  async function setUp(token: string, password: string, ctx = anonymousContext()) {
+    return startOwnMfaEnrollment(ctx, { token, password }, t.db);
+  }
+  const secretFrom = (uri: string) => Buffer.from(Secret.fromBase32(new URL(uri).searchParams.get("secret")!).bytes);
+
+  it("needs the password, then a code; afterwards sign-in asks for the code", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const token = await passwordStep(nurse);
+    const ctx = anonymousContext();
+    const started = await setUp(token, nurse.password, ctx);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const confirmed = await confirmOwnMfaEnrollment(
+      anonymousContext(),
+      { token, code: totpNow(secretFrom(started.value.otpauthUri)) },
+      t.db,
+    );
+    expect(confirmed).toMatchObject({ ok: true });
+    expect(confirmed.ok && confirmed.value.recoveryCodes).toHaveLength(8);
+    expect(await auditFor(t, ctx.requestId)).toMatchObject([
+      { action: "auth.mfa_self_enroll_start", outcome: "success", actor_user_id: nurse.id },
+    ]);
+
+    const next = await login(
+      anonymousContext(),
+      { identifier: nurse.staffId, password: nurse.password, deviceId: uuidv7(), userAgent: null },
+      t.db,
+    );
+    expect(next).toMatchObject({ ok: true, value: { stage: "mfa_pending" } });
+  });
+
+  it("refuses a wrong password, counting it toward the lockout", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const token = await passwordStep(nurse);
+    for (let i = 0; i < 4; i++) {
+      expect(await setUp(token, "not the password")).toMatchObject({ ok: false, reasonCode: "invalid_password" });
+    }
+    expect(await setUp(token, "not the password")).toMatchObject({ ok: false, reasonCode: "locked" });
+    expect((await readSession(token, anonymousContext(), t.db))?.status).toBe("revoked");
+  });
+
+  it("refuses when already enrolled, and from a locked session", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const token = await passwordStep(nurse);
+    await lockIdleSession(anonymousContext(), { token, source: "browser" }, t.db);
+    expect(await setUp(token, nurse.password)).toMatchObject({ ok: false, reasonCode: "session_invalid" });
+
+    const enrolledNurse = await makeUser(t, { roles: ["nurse"] });
+    const { secret } = await enrollTotp(t, enrolledNurse.id);
+    const pending = await passwordStep(enrolledNurse);
+    const verified = await verify(pending, totpNow(secret));
+    if (!verified.ok) throw new Error("verify failed");
+    expect(await setUp(verified.value.token, enrolledNurse.password)).toMatchObject({
+      ok: false,
+      reasonCode: "already_enrolled",
+    });
+  });
+
+  it("can't be confirmed without a setup started with the password, or after 15 minutes", async () => {
+    const nurse = await makeUser(t, { roles: ["nurse"] });
+    const token = await passwordStep(nurse);
+    expect(await confirmOwnMfaEnrollment(anonymousContext(), { token, code: "123456" }, t.db)).toMatchObject({
+      ok: false,
+      reasonCode: "no_pending_enrollment",
+    });
+    const started = await setUp(token, nurse.password);
+    if (!started.ok) throw new Error("start failed");
+    await t.ownerPool.query(
+      "UPDATE mfa_secret SET created_at = now() - interval '16 minutes' WHERE user_id = $1 AND status = 'pending'",
+      [nurse.id],
+    );
+    const code = totpNow(secretFrom(started.value.otpauthUri));
+    expect(await confirmOwnMfaEnrollment(anonymousContext(), { token, code }, t.db)).toMatchObject({
+      ok: false,
+      reasonCode: "no_pending_enrollment",
+    });
   });
 });
