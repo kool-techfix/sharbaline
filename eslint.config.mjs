@@ -12,6 +12,8 @@ const noDbOutsideServer = {
 const noServerInSharedCode = {
   group: ["@/server", "@/server/*"],
   message: "src/lib and src/components must stay client-safe; move server logic to src/server.",
+  // Type-only imports are erased at build time, so they can't pull server code into a bundle.
+  allowTypeImports: true,
 };
 
 const config = [
