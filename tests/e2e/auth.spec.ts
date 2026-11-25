@@ -134,6 +134,7 @@ test.describe("sign-in", () => {
 
 test.describe("idle lock", () => {
   test("locks after inactivity, hides the page, and unlocks with the password", async ({ page }) => {
+    test.setTimeout(90_000); // waits out the whole idle period
     await page.goto("/login");
     await enterCredentials(page, E2E_USERS.nurseIdle.staffId);
     const welcome = page.getByRole("heading", { name: `Welcome, ${E2E_USERS.nurseIdle.displayName}` });
