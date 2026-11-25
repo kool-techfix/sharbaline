@@ -368,3 +368,23 @@ In M2 the only status change is "left"; nurse and doctor statuses come with M3.
 - No notification bell, no "Last synced" time (it comes with offline sync in slice 8), and no Active/Follow-up status. None is defined in scope.
 - Structured name and next-of-kin fields instead of single text boxes.
 - No card preview, since printing is on hold; the design's card also showed a phone number.
+
+## D-033 · Front desk screens (M2)
+2026-11-25 · Accepted · Project lead (M2 plan approval)
+
+**Where.** The front desk workspace lives under `/front-desk`: search (home), `patients/new`, `patients/[id]`, `patients/[id]/edit` and `queue`. Every page calls `requireRole("front_desk")`. Nurse, doctor, lab and pharmacist views of a patient arrive with their own workspaces (M3 onwards), on the same services. The front desk sidebar shows **Patients** and **Today's queue** instead of "Home".
+
+**No patient data in URLs (rule 2).** Search runs as a server action, never `?q=`, so names and phone numbers stay out of the address bar, browser history and proxy logs. Pages are addressed by the opaque patient id only.
+
+**Registration flow.**
+- The form checks fields as you go, with the same Zod schema as the server. The first invalid field gets focus, and each error is tied to its field.
+- On submit it asks for possible duplicates first. If any, it lists them (name, number, sex, age, date of birth, phone) with **Open record**. Going ahead needs a tick, "this patient is not any of the people above", then **Register as a new patient**. Changing any detail clears the list, so a fresh check runs.
+- The registration id is generated once per form, so a double submit or retry returns the same patient (rule 11).
+- Date of birth: "date known" or "only age known" (shown as "about 34 years").
+- The consent notice is placeholder wording, recorded as `draft-1` (D-032).
+
+**After registering**, the patient's page shows the new patient number, to write on the paper card and folder while card printing is on hold, plus **Add to today's queue**.
+
+**Queue.** Today's entries in arrival order, with status as text and an icon. **Left without being seen** has an inline confirmation, no browser dialog.
+
+**E2E idle timeout** raised from 8 s to 25 s: on a slow laptop a server round trip plus an accessibility scan, with no input meanwhile, locked the screen mid-test. The idle-lock test still checks the lock, and waits longer.
