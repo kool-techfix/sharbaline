@@ -394,9 +394,10 @@ In M2 the only status change is "left"; nurse and doctor statuses come with M3.
 **Context.** The app keeps one Prisma client on `globalThis` so dev hot reloads don't open a new connection pool each time. After a migration added the patient tables, a `pnpm dev` started earlier kept using the old client, and every patient screen failed with "Something went wrong" until the server was restarted.
 
 **Decision.**
-- The cached client remembers which generated `PrismaClient` class built it (`src/server/db/cache.ts`). When `prisma generate` reruns, the dev server reloads the generated module, `db()` sees a different class, closes the old pool and builds a new client. No restart needed.
+- The cached client remembers a fingerprint of the generated client's schema: models, fields and enum values (`src/server/db/cache.ts`). When `prisma generate` reruns on a changed schema, the dev server reloads the generated module, `db()` sees a different fingerprint, closes the old pool and builds a new client. No restart needed.
+- It compares the schema, not the `PrismaClient` class. Next.js bundles the generated client once per server layer (pages, server actions), even in production. A first version compared classes, so the layers kept replacing each other's client and closing pools that requests were still using ("Cannot use a pool after calling end on the pool").
 - `pnpm dev` runs `prisma generate` first, and `pnpm db:migrate` runs it after applying migrations, so pulling a migration and running `pnpm db:migrate` is enough, even with the dev server running.
-- In production the class never changes inside a process, so the check is a single comparison.
+- In production the fingerprint never changes inside a process, so the check is one string comparison.
 
 ## D-035 · How break-glass works
 2026-11-26 · Accepted · Project lead

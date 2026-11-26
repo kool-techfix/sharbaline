@@ -1,8 +1,9 @@
 import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@/generated/prisma/client";
+import { Prisma, PrismaClient } from "@/generated/prisma/client";
+import * as enums from "@/generated/prisma/enums";
 import { serverEnv } from "@/server/config/env";
-import { currentClient, type CachedClient } from "./cache";
+import { currentClient, schemaFingerprint, type CachedClient } from "./cache";
 
 export type Db = PrismaClient;
 
@@ -12,12 +13,13 @@ export function createDb(connectionString: string): Db {
 }
 
 // One client per process, kept on globalThis so dev hot reloads don't open a new pool each time.
-// It remembers which generated client built it: after `prisma generate` the dev server reloads
-// that module, and a client from the old one doesn't know the new tables (D-034).
+// It remembers the schema of the generated client that built it: after `prisma generate` the dev
+// server reloads that module, and a client from the old one doesn't know the new tables (D-034).
 const globalForDb = globalThis as unknown as { hmsDb?: CachedClient<Db> };
+const SCHEMA = schemaFingerprint(Prisma, enums);
 
 /** The app's database client, connected as the restricted hms_app role. */
 export function db(): Db {
-  globalForDb.hmsDb = currentClient(globalForDb.hmsDb, PrismaClient, () => createDb(serverEnv().DATABASE_URL));
+  globalForDb.hmsDb = currentClient(globalForDb.hmsDb, SCHEMA, () => createDb(serverEnv().DATABASE_URL));
   return globalForDb.hmsDb.client;
 }
