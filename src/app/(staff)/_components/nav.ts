@@ -15,9 +15,17 @@ export function navFor(role: Role): NavItem[] {
       { href: "/account", label: t("staff.account") },
     ];
   }
+  if (role === "admin") {
+    return [
+      { href: ROLE_HOME[role], label: t("staff.home") },
+      { href: "/admin/patients", label: t("staff.patients") },
+      { href: "/admin/break-glass", label: t("staff.breakGlass") },
+      { href: "/admin/users", label: t("staff.users") },
+      { href: "/account", label: t("staff.account") },
+    ];
+  }
   return [
     { href: ROLE_HOME[role], label: t("staff.home") },
-    ...(role === "admin" ? [{ href: "/admin/users", label: t("staff.users") }] : []),
     { href: "/account", label: t("staff.account") },
   ];
 }

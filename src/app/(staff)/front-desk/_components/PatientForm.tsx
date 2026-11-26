@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { patientDetailsSchema, type PatientDetailsInput } from "@/lib/validation/patient";
 import type { DuplicateCandidate } from "@/server/services/patients/shared";
 import { checkDuplicates, register, saveDetails } from "../actions";
-import { ageLabel, calendarDate, displayName, phoneLabel, sexLabel } from "./format";
+import { ageLabel, calendarDate, displayName, phoneLabel, sexLabel } from "@/app/(staff)/_components/patients/format";
 
 /*
  * Registration and edit form (scope §5 M2). The shared Zod schema gives early, per-field

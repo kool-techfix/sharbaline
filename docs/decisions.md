@@ -428,3 +428,19 @@ Builds D-028. Decided with the project lead: admins only, 30 minutes, reviewed b
 - Rolling the migration back would break verification for rows that carry an event id. Its `down.sql` is for dev/test only.
 
 **No foreign keys to `user` or `session`.** Like the other patient tables, the event stores user and session ids without foreign keys: test contexts use synthetic ids, and sessions are not kept forever. The patient and event foreign keys are real.
+
+## D-036 · Break-glass screens
+2026-11-26 · Accepted · Project lead
+
+The admin side of D-035.
+- **Admin navigation:** Home, Patients, Break-glass reviews, Users, My account. The admin home shows how many accesses are awaiting review.
+- **`/admin/patients`** reuses the front desk search, so the query goes to a server action, never into the URL. **`/admin/patients/{id}`** shows the demographics, which admins may read and which are audited. Its "Clinical record" section stays locked until the admin gives a reason.
+- **The reason form is inline, not a browser dialog.** Its heading takes focus, and each field explains what's missing. Once access is open, a banner shows when it ends and an "End access now" button. Until M3 the clinical section says nothing has been recorded yet.
+- **`/admin/break-glass`** has two tabs, awaiting and reviewed (`?status=reviewed`; no patient data in the URL). Each event shows:
+  - who opened which patient, when, and the access state
+  - how many clinical views were made under it
+  - the category and the written details
+  - a link to the patient
+- **Reviewing:**
+  - Another admin chooses Appropriate, Not appropriate or Needs follow-up. A comment is required unless the access was appropriate.
+  - Your own events show "a different admin must review it" instead of the form.

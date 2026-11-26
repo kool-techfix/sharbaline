@@ -18,15 +18,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { t, tPlural } from "@/lib/i18n";
+import type { ActionResult } from "@/server/http/action-result";
 import type { SearchResult } from "@/server/services/patients/records";
-import { search } from "../actions";
 import { ageLabel, displayName, phoneLabel, sexLabel } from "./format";
+
+interface PatientSearchProps {
+  /** The calling workspace's search action (each wraps the same audited service). */
+  search: (input: { query: string }) => Promise<ActionResult<SearchResult>>;
+  /** Where a result links to: `${recordPath}/${patientId}`. */
+  recordPath: string;
+  /** Offered when nothing matches, for roles that can register patients. */
+  registerHref?: string;
+}
 
 /**
  * Patient search. The query goes to a server action, never into the URL (rule 2). Results show
- * only what the front desk needs to pick the right person; the full record is one click away.
+ * only what staff need to pick the right person; the full record is one click away.
  */
-export function PatientSearch() {
+export function PatientSearch({ search, recordPath, registerHref }: PatientSearchProps) {
   const { reportUnreachable } = useConnection();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +116,7 @@ export function PatientSearch() {
                 <TableCell className="font-mono">{patient.patientNumber}</TableCell>
                 <TableCell>
                   <Link
-                    href={`/front-desk/patients/${patient.id}`}
+                    href={`${recordPath}/${patient.id}`}
                     className="inline-flex min-h-11 items-center font-semibold text-primary underline underline-offset-4"
                   >
                     {displayName(patient)}
@@ -123,9 +132,9 @@ export function PatientSearch() {
         </Table>
       ) : null}
 
-      {result && result.results.length === 0 ? (
+      {result && result.results.length === 0 && registerHref ? (
         <p>
-          <Link href="/front-desk/patients/new" className="inline-flex min-h-11 items-center font-semibold text-primary underline">
+          <Link href={registerHref} className="inline-flex min-h-11 items-center font-semibold text-primary underline">
             {t("patients.search.registerInstead")}
           </Link>
         </p>
