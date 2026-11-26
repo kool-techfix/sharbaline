@@ -2,7 +2,8 @@ import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { requireRole } from "@/server/http/guard";
-import { PatientSearch } from "./_components/PatientSearch";
+import { PatientSearch } from "../_components/patients/PatientSearch";
+import { search } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export default async function FrontDeskPage() {
           {t("patients.register.link")}
         </Link>
       </div>
-      <PatientSearch />
+      <PatientSearch search={search} recordPath="/front-desk/patients" registerHref="/front-desk/patients/new" />
     </section>
   );
 }

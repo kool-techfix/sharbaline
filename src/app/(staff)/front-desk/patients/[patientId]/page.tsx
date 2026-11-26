@@ -9,7 +9,7 @@ import { requestContext } from "@/server/http/context";
 import { actorOf, requireRole } from "@/server/http/guard";
 import { getPatient } from "@/server/services/patients/records";
 import { AddToQueue } from "../../_components/AddToQueue";
-import { ageLabel, calendarDate, displayName, phoneLabel, sexLabel } from "../../_components/format";
+import { ageLabel, calendarDate, displayName, phoneLabel, sexLabel } from "@/app/(staff)/_components/patients/format";
 import { QueueStatusChip } from "../../_components/QueueStatusChip";
 
 export const dynamic = "force-dynamic";

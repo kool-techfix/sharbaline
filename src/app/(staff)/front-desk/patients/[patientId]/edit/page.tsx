@@ -7,7 +7,7 @@ import { requestContext } from "@/server/http/context";
 import { actorOf, requireRole } from "@/server/http/guard";
 import { getPatient } from "@/server/services/patients/records";
 import { PatientForm, type PatientFormValues } from "../../../_components/PatientForm";
-import { displayName } from "../../../_components/format";
+import { displayName } from "@/app/(staff)/_components/patients/format";
 
 export const dynamic = "force-dynamic";
 
