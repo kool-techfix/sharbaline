@@ -388,3 +388,12 @@ In M2 the only status change is "left"; nurse and doctor statuses come with M3.
 **Queue.** Today's entries in arrival order, with status as text and an icon. **Left without being seen** has an inline confirmation, no browser dialog.
 
 **E2E idle timeout** raised from 8 s to 25 s: on a slow laptop a server round trip plus an accessibility scan, with no input meanwhile, locked the screen mid-test. The idle-lock test still checks the lock, and waits longer.
+
+## D-034 · Dev server picks up a regenerated database client
+
+**Context.** The app keeps one Prisma client on `globalThis` so dev hot reloads don't open a new connection pool each time. After a migration added the patient tables, a `pnpm dev` started earlier kept using the old client, and every patient screen failed with "Something went wrong" until the server was restarted.
+
+**Decision.**
+- The cached client remembers which generated `PrismaClient` class built it (`src/server/db/cache.ts`). When `prisma generate` reruns, the dev server reloads the generated module, `db()` sees a different class, closes the old pool and builds a new client. No restart needed.
+- `pnpm dev` runs `prisma generate` first, and `pnpm db:migrate` runs it after applying migrations, so pulling a migration and running `pnpm db:migrate` is enough, even with the dev server running.
+- In production the class never changes inside a process, so the check is a single comparison.
