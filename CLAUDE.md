@@ -45,14 +45,14 @@ Scripts that import server code run with `tsx --conditions=react-server` (makes 
 
 ```
 pnpm db:start           # local PostgreSQL in the foreground (data in .data/postgres)
-pnpm dev                # run locally (needs db:start)
+pnpm dev                # run locally (needs db:start); regenerates the DB client first
 pnpm build              # production build
 pnpm lint               # eslint (zero warnings) + typecheck
 pnpm test               # unit + integration (integration starts its own throwaway PostgreSQL)
 pnpm test:unit          # unit only, fast
 pnpm test:integration   # integration only
 pnpm test:e2e           # playwright against a production build; on macOS 12 prefix PLAYWRIGHT_CHANNEL=chrome
-pnpm db:migrate         # apply migrations (prisma migrate deploy)
+pnpm db:migrate         # apply migrations, then regenerate the DB client (a running dev server picks it up, D-034)
 pnpm db:migrate:dev     # create a migration: use --create-only, add hand-written SQL + down.sql, then apply
 pnpm db:migrate:down    # roll back the latest migration (dev only)
 pnpm db:migrate:check   # every migration goes up, down, up cleanly (runs in CI)
