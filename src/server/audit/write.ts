@@ -21,6 +21,8 @@ export interface AuditEntry {
   patientId?: string | null;
   reasonCode?: string | null;
   metadata?: AuditMetadata;
+  /** The break-glass event this action ran under, if any (D-035). Must already be committed. */
+  breakGlassEventId?: string | null;
 }
 
 /**
@@ -54,6 +56,7 @@ export async function writeAudit(
       reasonCode: entry.reasonCode ?? null,
       requestId: ctx.requestId,
       metadata: entry.metadata ?? {},
+      breakGlassEventId: entry.breakGlassEventId ?? null,
     },
   });
 }

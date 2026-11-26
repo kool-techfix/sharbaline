@@ -4,6 +4,7 @@ import type { TestDatabase } from "../integration/helpers/db";
 import { makeUser } from "../integration/helpers/auth";
 import { userContext } from "../integration/helpers/context";
 import { makePatient, patientInput } from "../integration/helpers/patients";
+import { startBreakGlass } from "@/server/services/break-glass/break-glass";
 import { addToQueue } from "@/server/services/queue/queue";
 
 /**
@@ -33,6 +34,17 @@ const queuedEntry = async (t: TestDatabase) => {
   const id = uuidv7();
   await addToQueue(userContext("front_desk"), { id, patientId: (await makePatient(t)).id }, t.db);
   return { entryId: id };
+};
+/** A break-glass event opened by some other admin. */
+const anEvent = async (t: TestDatabase) => {
+  const id = uuidv7();
+  const outcome = await startBreakGlass(
+    userContext("admin"),
+    { id, ...(await aPatient(t)), reasonCategory: "emergency_care", reasonDetails: "Synthetic matrix test reason" },
+    t.db,
+  );
+  if (!outcome.ok) throw new Error("fixture: break-glass did not start");
+  return id;
 };
 const newAccount = async () => ({
   id: uuidv7(),
@@ -90,6 +102,25 @@ export const FIXTURES: Record<string, Fixture> = {
   "queue.add": { permission: { resource: "queue", action: "create" }, input: async (t) => ({ id: uuidv7(), ...(await aPatient(t)) }) },
   "queue.view": { permission: { resource: "queue", action: "read" }, input: async () => ({}) },
   "queue.mark_left": { permission: { resource: "queue", action: "update" }, input: queuedEntry },
+  "break_glass.start": {
+    permission: { resource: "break_glass", action: "create" },
+    input: async (t) => ({
+      id: uuidv7(),
+      ...(await aPatient(t)),
+      reasonCategory: "complaint_investigation",
+      reasonDetails: "Synthetic matrix test reason",
+    }),
+  },
+  "break_glass.end": {
+    permission: { resource: "break_glass", action: "create" },
+    input: async (t) => ({ eventId: await anEvent(t) }),
+  },
+  "break_glass.status": { permission: { resource: "break_glass", action: "read" }, input: aPatient },
+  "break_glass.list": { permission: { resource: "break_glass", action: "read" }, input: async () => ({ status: "awaiting" }) },
+  "break_glass.review": {
+    permission: { resource: "break_glass", action: "review" },
+    input: async (t) => ({ id: uuidv7(), eventId: await anEvent(t), outcome: "appropriate", comment: null }),
+  },
 };
 
 /**

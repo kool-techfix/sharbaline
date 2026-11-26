@@ -18,7 +18,7 @@ export class ForbiddenError extends ServiceError {
   override readonly name = "ForbiddenError";
   readonly code = "forbidden";
 
-  constructor(readonly reasonCode: "role_not_permitted" | "record_not_permitted" = "role_not_permitted") {
+  constructor(readonly reasonCode: "role_not_permitted" | "record_not_permitted" | "break_glass_required" = "role_not_permitted") {
     super("errors.forbidden");
   }
 }

@@ -46,6 +46,12 @@ describe("permission matrix (docs/scope.md §4.1)", () => {
     expect(rolesFor("scanned_documents", "read_metadata")).toContain("admin");
   });
 
+  it("lets only admins break the glass and review it (D-035)", () => {
+    for (const action of ["create", "read", "review"]) {
+      expect(rolesFor("break_glass", action), action).toEqual(["admin"]);
+    }
+  });
+
   it("never lets pharmacists edit prescriptions, only dispense (D-009)", () => {
     expect(rolesFor("prescriptions", "dispense")).toEqual(["pharmacist"]);
     expect(rolesFor("prescriptions", "create")).not.toContain("pharmacist");

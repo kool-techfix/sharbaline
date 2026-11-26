@@ -84,6 +84,12 @@ export const PERMISSIONS = {
   audit_log: {
     read: ["admin"],
   },
+  /** Starting break-glass and reviewing it (D-028, D-035). What it unlocks is per service. */
+  break_glass: {
+    create: ["admin"],
+    read: ["admin"],
+    review: ["admin"],
+  },
   system_status: {
     read: ["admin"],
   },

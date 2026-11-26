@@ -355,5 +355,9 @@
   "queue.markLeftConfirm": "Mark as left?",
   "queue.markLeftYes": "Yes, mark as left",
   "queue.markLeftNo": "Keep in queue",
-  "queue.markedLeft": "Marked as left."
+  "queue.markedLeft": "Marked as left.",
+  "breakGlass.error.notFound": "That break-glass access wasn't found.",
+  "breakGlass.error.idConflict": "Something went wrong opening the record. Close the dialog and try again.",
+  "breakGlass.error.selfReview": "You opened this record yourself, so another admin must review it.",
+  "breakGlass.error.alreadyReviewed": "Another admin has already reviewed this access."
 }

@@ -36,29 +36,34 @@ enum AuditOutcome {
 /// event lands here. Never store patient data or secrets in any column, metadata included.
 /// seq, prev_hash and hash are set by the audit_log_chain trigger; client values are ignored.
 model AuditLog {
-  id           String       @id @db.Uuid
-  seq          BigInt?      @unique
-  occurredAt   DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
-  actorUserId  String?      @map("actor_user_id") @db.Uuid
-  actorRole    Role?        @map("actor_role")
-  sessionId    String?      @map("session_id") @db.Uuid
-  deviceId     String?      @map("device_id") @db.Uuid
-  ip           String?      @db.Inet
-  action       String
-  resourceType String?      @map("resource_type")
-  resourceId   String?      @map("resource_id")
-  patientId    String?      @map("patient_id") @db.Uuid
-  outcome      AuditOutcome
-  reasonCode   String?      @map("reason_code")
-  requestId    String       @map("request_id")
-  metadata     Json         @default("{}")
-  prevHash     Bytes?       @map("prev_hash")
-  hash         Bytes?
+  id                String       @id @db.Uuid
+  seq               BigInt?      @unique
+  occurredAt        DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  actorUserId       String?      @map("actor_user_id") @db.Uuid
+  actorRole         Role?        @map("actor_role")
+  sessionId         String?      @map("session_id") @db.Uuid
+  deviceId          String?      @map("device_id") @db.Uuid
+  ip                String?      @db.Inet
+  action            String
+  resourceType      String?      @map("resource_type")
+  resourceId        String?      @map("resource_id")
+  patientId         String?      @map("patient_id") @db.Uuid
+  outcome           AuditOutcome
+  reasonCode        String?      @map("reason_code")
+  requestId         String       @map("request_id")
+  metadata          Json         @default("{}")
+  prevHash          Bytes?       @map("prev_hash")
+  hash              Bytes?
+  /// Set when the action ran under break-glass (D-028). In the hash only when set (D-035).
+  breakGlassEventId String?      @map("break_glass_event_id") @db.Uuid
+
+  breakGlassEvent BreakGlassEvent? @relation(fields: [breakGlassEventId], references: [id], onDelete: Restrict)
 
   @@index([occurredAt])
   @@index([actorUserId, occurredAt])
   @@index([patientId, occurredAt])
   @@index([action, occurredAt])
+  @@index([breakGlassEventId])
   @@map("audit_log")
 }
 
@@ -277,6 +282,7 @@ model Patient {
   queueEntries        QueueEntry[]
   duplicateOverrides  DuplicateOverride[] @relation("OverrideNew")
   suspectedIn         DuplicateOverride[] @relation("OverrideSuspected")
+  breakGlassEvents    BreakGlassEvent[]
 
   @@index([legacyCardNumber])
   @@index([phoneE164])
@@ -333,4 +339,61 @@ model QueueEntry {
   @@unique([queueDate, patientId])
   @@unique([queueDate, position])
   @@map("queue_entry")
+}
+
+// ───────────────────────────── Break-glass (D-028, D-035) ─────────────────────────────
+
+enum BreakGlassReason {
+  emergency_care
+  patient_request
+  complaint_investigation
+  records_correction
+  legal_regulatory
+  other
+}
+
+enum BreakGlassReviewOutcome {
+  appropriate
+  inappropriate
+  needs_follow_up
+}
+
+/// An admin opening one patient's clinical record outside the role matrix, for one session
+/// and at most 30 minutes. Append-only, except that ended_at may be set once (trigger).
+/// reason_details is free text that may mention the patient: it lives here, never in the
+/// audit log or application logs.
+model BreakGlassEvent {
+  id             String           @id @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  sessionId      String           @map("session_id") @db.Uuid
+  patientId      String           @map("patient_id") @db.Uuid
+  reasonCategory BreakGlassReason @map("reason_category")
+  reasonDetails  String           @map("reason_details")
+  startedAt      DateTime         @default(now()) @map("started_at") @db.Timestamptz(6)
+  expiresAt      DateTime         @map("expires_at") @db.Timestamptz(6)
+  endedAt        DateTime?        @map("ended_at") @db.Timestamptz(6)
+
+  patient      Patient           @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  review       BreakGlassReview?
+  auditEntries AuditLog[]
+
+  @@index([userId, sessionId, patientId, expiresAt])
+  @@index([patientId, startedAt])
+  @@index([startedAt])
+  @@map("break_glass_event")
+}
+
+/// Append-only. One review per event, by an admin other than the one who broke the glass
+/// (service check and trigger).
+model BreakGlassReview {
+  id         String                  @id @db.Uuid
+  eventId    String                  @unique @map("event_id") @db.Uuid
+  reviewerId String                  @map("reviewer_id") @db.Uuid
+  outcome    BreakGlassReviewOutcome
+  comment    String?
+  reviewedAt DateTime                @default(now()) @map("reviewed_at") @db.Timestamptz(6)
+
+  event BreakGlassEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@map("break_glass_review")
 }

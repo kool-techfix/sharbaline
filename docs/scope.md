@@ -62,6 +62,7 @@ C = create, R = read, U = update, C\* = correct by appending a new row (never an
 | Scanned documents | C R, void own | C R, void own | R | – | – | Metadata R, void any, restore |
 | Users and roles | – | – | – | – | – | C R U |
 | Audit log | – | – | – | – | – | R |
+| Break-glass (D-035) | – | – | – | – | – | C R, review (not own) |
 | System status | – | – | – | – | – | R |
 
 - **Pharmacist "limited" view of demographics:** name, age, sex, patient ID, allergies. Nothing else, and specifically **no phone number**, even though the Pharmacy-Dispensing design shows one (D-004; raising with the client as a possible matrix change).
