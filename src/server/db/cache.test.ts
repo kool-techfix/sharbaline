@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { currentClient } from "./cache";
+import { Prisma } from "@/generated/prisma/client";
+import * as enums from "@/generated/prisma/enums";
+import { currentClient, schemaFingerprint } from "./cache";
 
 function fakeClient() {
   return { $disconnect: vi.fn(() => Promise.resolve()) };
@@ -8,30 +10,48 @@ function fakeClient() {
 describe("currentClient", () => {
   it("builds a client when none is cached", () => {
     const made = fakeClient();
-    const result = currentClient(undefined, "v1", () => made);
-    expect(result).toEqual({ client: made, builtBy: "v1" });
+    expect(currentClient(undefined, "v1", () => made)).toEqual({ client: made, schema: "v1" });
   });
 
-  it("keeps the cached client while the generated client is unchanged", () => {
-    const cached = { client: fakeClient(), builtBy: "v1" };
+  it("keeps the cached client while the schema is unchanged, whichever bundle asks", () => {
+    // Pages and server actions each have their own copy of the generated client in production;
+    // they must share one client rather than keep replacing each other's.
+    const cached = { client: fakeClient(), schema: "v1" };
     const create = vi.fn(fakeClient);
+    expect(currentClient(cached, "v1", create)).toBe(cached);
     expect(currentClient(cached, "v1", create)).toBe(cached);
     expect(create).not.toHaveBeenCalled();
     expect(cached.client.$disconnect).not.toHaveBeenCalled();
   });
 
-  it("replaces the client and closes the old one after the client is regenerated", () => {
-    const cached = { client: fakeClient(), builtBy: "v1" };
+  it("replaces the client and closes the old one after the schema changes", () => {
+    const cached = { client: fakeClient(), schema: "v1" };
     const made = fakeClient();
-    const result = currentClient(cached, "v2", () => made);
-    expect(result).toEqual({ client: made, builtBy: "v2" });
+    expect(currentClient(cached, "v2", () => made)).toEqual({ client: made, schema: "v2" });
     expect(cached.client.$disconnect).toHaveBeenCalledOnce();
   });
 
   it("doesn't throw when closing the old client fails", async () => {
     const old = { $disconnect: vi.fn(() => Promise.reject(new Error("already closed"))) };
-    const result = currentClient({ client: old, builtBy: "v1" }, "v2", fakeClient);
-    expect(result.builtBy).toBe("v2");
+    expect(currentClient({ client: old, schema: "v1" }, "v2", fakeClient).schema).toBe("v2");
     await Promise.resolve();
+  });
+});
+
+describe("schemaFingerprint", () => {
+  it("covers models, their fields and enum values, and is stable", () => {
+    const fingerprint = schemaFingerprint(Prisma, enums);
+    expect(fingerprint).toBe(schemaFingerprint({ ...Prisma }, { ...enums }));
+    expect(fingerprint).toContain("BreakGlassEvent");
+    expect(fingerprint).toContain("reasonDetails");
+    expect(fingerprint).toContain("needs_follow_up");
+  });
+
+  it("changes when a field or an enum value is added", () => {
+    const base = schemaFingerprint(Prisma, enums);
+    const withField = schemaFingerprint({ ...Prisma, PatientScalarFieldEnum: { ...Prisma.PatientScalarFieldEnum, nickname: "nickname" } }, enums);
+    const withValue = schemaFingerprint(Prisma, { ...enums, Sex: { ...enums.Sex, other: "other" } });
+    expect(withField).not.toBe(base);
+    expect(withValue).not.toBe(base);
   });
 });
