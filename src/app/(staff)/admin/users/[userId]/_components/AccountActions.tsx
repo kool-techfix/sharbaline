@@ -5,7 +5,7 @@ import { FormMessage } from "@/components/FormMessage";
 import { Button } from "@/components/ui/button";
 import { t, tPlural } from "@/lib/i18n";
 import { runAccountAction, type AccountAction } from "../../actions";
-import { useAction } from "./useAction";
+import { useAction } from "@/components/useAction";
 
 type Spec = {
   action: AccountAction;

@@ -4,7 +4,11 @@
  * accounts between tests would make them interfere.
  */
 export const E2E_PASSWORD = "e2e synthetic only";
-export const E2E_IDLE_SECONDS = 8;
+/**
+ * Short enough for the idle-lock test, long enough that a slow laptop's server round trip plus
+ * an accessibility scan (no input meanwhile) doesn't lock the screen mid-test.
+ */
+export const E2E_IDLE_SECONDS = 25;
 
 /** Base32 TOTP secret for enrolled e2e accounts. Test-only; never used outside e2e. */
 export const E2E_TOTP_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
@@ -17,6 +21,10 @@ export const E2E_USERS = {
   nurseIdle: { staffId: "e2e.nurse.idle", displayName: "E2E Idle Nurse", role: "nurse", enrolled: false },
   nurseLockout: { staffId: "e2e.nurse.lockout", displayName: "E2E Lockout Nurse", role: "nurse", enrolled: false },
   frontDesk: { staffId: "e2e.frontdesk", displayName: "E2E Front Desk", role: "front_desk", enrolled: false },
+  frontDeskRegister: { staffId: "e2e.desk.register", displayName: "E2E Desk Register", role: "front_desk", enrolled: false },
+  frontDeskDuplicate: { staffId: "e2e.desk.duplicate", displayName: "E2E Desk Duplicate", role: "front_desk", enrolled: false },
+  frontDeskSearch: { staffId: "e2e.desk.search", displayName: "E2E Desk Search", role: "front_desk", enrolled: false },
+  labNoDesk: { staffId: "e2e.lab", displayName: "E2E Lab", role: "lab", enrolled: false },
   /** Signs in once in global setup, so the first real test doesn't pay the cold-start cost. */
   warmup: { staffId: "e2e.warmup", displayName: "E2E Warm-up", role: "front_desk", enrolled: false },
   adminEnrolled: { staffId: "e2e.admin", displayName: "E2E Admin", role: "admin", enrolled: true },

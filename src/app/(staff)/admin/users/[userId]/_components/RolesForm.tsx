@@ -7,7 +7,7 @@ import { t } from "@/lib/i18n";
 import type { Role } from "@/server/permissions/roles";
 import { saveRoles } from "../../actions";
 import { RolePicker } from "../../_components/RolePicker";
-import { useAction } from "./useAction";
+import { useAction } from "@/components/useAction";
 
 export function RolesForm({ userId, roles }: { userId: string; roles: Role[] }) {
   const [selected, setSelected] = useState<Role[]>(roles);
