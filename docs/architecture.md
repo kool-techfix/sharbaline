@@ -99,9 +99,12 @@ AuditLog [AO]     id, seq (chain order), occurred_at, actor_user_id, actor_role,
                   patient_id?, outcome (success|failure|denied|error), reason_code (CHECK),
                   request_id, metadata jsonb (object; field names/counts only),
                   prev_hash, hash                          (built in foundation PR; D-018)
-                  break_glass_event_id? is added with break-glass
-BreakGlassEvent [AO]   id, user_id, patient_id, reason, started_at, expires_at
-BreakGlassReview [AO]  id, event_id, reviewer_id, outcome, comment, reviewed_at
+                  break_glass_event_id? (hashed only when set; D-035)
+BreakGlassEvent [AO*]  id, user_id, session_id, patient_id (FK), reason_category, reason_details,
+                  started_at, expires_at (≤ 1 h; service grants 30 min), ended_at?
+                  *only ended_at may be set, once (trigger)                       (D-035)
+BreakGlassReview [AO]  id, event_id UNIQUE (FK), reviewer_id (≠ event user, trigger),
+                  outcome (appropriate|inappropriate|needs_follow_up), comment?, reviewed_at
 HospitalSetting   key PK, value jsonb, updated_by, updated_at     (patient_id_prefix, thresholds…)
 ```
 Permissions are defined in code (`server/permissions/matrix.ts`). The role × service test suite is generated from the services themselves (`tests/permission-matrix`, D-027).

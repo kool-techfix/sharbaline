@@ -80,7 +80,8 @@ export function totpNow(secret: Buffer, stepOffset = 0): string {
 
 export async function auditFor(t: TestDatabase, requestId: string) {
   const { rows } = await t.appPool.query(
-    `SELECT action, outcome, reason_code, actor_user_id, actor_role, session_id, resource_id, metadata
+    `SELECT action, outcome, reason_code, actor_user_id, actor_role, session_id, resource_id, patient_id,
+            break_glass_event_id, metadata
        FROM audit_log WHERE request_id = $1 ORDER BY seq`,
     [requestId],
   );
@@ -92,6 +93,8 @@ export async function auditFor(t: TestDatabase, requestId: string) {
     actor_role: string | null;
     session_id: string | null;
     resource_id: string | null;
+    patient_id: string | null;
+    break_glass_event_id: string | null;
     metadata: Record<string, unknown>;
   }[];
 }

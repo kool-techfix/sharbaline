@@ -94,7 +94,9 @@ describe.each(protectedServices.map((service) => [service.meta.action, service] 
     } else {
       const error = await service(ctx, input, t.db).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(ForbiddenError);
-      expect((error as ForbiddenError).reasonCode).toBe("role_not_permitted");
+      // Clinical services open to admins through break-glass ask for it instead (D-035).
+      const expected = service.meta.breakGlass && role === "admin" ? "break_glass_required" : "role_not_permitted";
+      expect((error as ForbiddenError).reasonCode).toBe(expected);
       expect(await auditOutcomes(ctx.requestId)).toEqual(["denied"]);
     }
   });

@@ -388,3 +388,33 @@ In M2 the only status change is "left"; nurse and doctor statuses come with M3.
 **Queue.** Today's entries in arrival order, with status as text and an icon. **Left without being seen** has an inline confirmation, no browser dialog.
 
 **E2E idle timeout** raised from 8 s to 25 s: on a slow laptop a server round trip plus an accessibility scan, with no input meanwhile, locked the screen mid-test. The idle-lock test still checks the lock, and waits longer.
+
+## D-035 · How break-glass works
+2026-11-26 · Accepted · Project lead
+
+Builds D-028. Decided with the project lead: admins only, 30 minutes, reviewed by a different admin.
+
+**Who and how long.**
+- Only `admin` can break the glass in Phase 1 (new `break_glass` resource in the matrix: create, read, review).
+- One event covers **one patient, one session, 30 minutes**. Signing out ends it, since the next session has a different id. The admin can also end it early.
+- The database refuses windows over an hour.
+
+**Reason.**
+- A category (emergency care, patient or family request, complaint or investigation, records correction, legal or regulatory, other) plus written details of 10–500 characters.
+- The details may mention the patient. They are stored only in `break_glass_event` and shown only on the review screen. Audit entries carry the category code and ids, never the text (rule 2).
+
+**What it unlocks.**
+- Nothing by itself. A clinical service opts in with `breakGlass: { patientId }` in `defineService`.
+- For an admin the matrix refuses, the kernel then looks for a live event for that patient in that session. Without one, the admin is refused and audited with reason `break_glass_required`, which the UI uses to offer the reason dialog. With one, the request runs and its audit entry carries `break_glass_event_id`.
+- The role matrix still gives admin no clinical access.
+
+**Append-only, with one exception.**
+- Events can't be edited or deleted. The only change allowed is setting `ended_at` once, to end access early, enforced by a trigger and a column-level grant.
+- Reviews are fully append-only. There is one review per event.
+- Self-review is refused by the service and by a trigger, so it holds for every database login. With a single admin, their events stay awaiting review.
+
+**Audit hash.**
+- `audit_log.break_glass_event_id` is part of each row's hash only when it is set. Rows without it, including every row written before this change, keep the exact digest they had, so the whole chain still verifies.
+- Rolling the migration back would break verification for rows that carry an event id. Its `down.sql` is for dev/test only.
+
+**No foreign keys to `user` or `session`.** Like the other patient tables, the event stores user and session ids without foreign keys: test contexts use synthetic ids, and sessions are not kept forever. The patient and event foreign keys are real.
