@@ -29,7 +29,7 @@ test.describe("admin user management", () => {
 
     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Users" }).click();
     await expect(page.getByRole("heading", { name: "Users", level: 1 })).toBeVisible();
-    await expect(page.getByRole("link", { name: "E2E Admin" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "E2E Admin", exact: true })).toBeVisible();
     await expectNoAxeViolations(page);
 
     await page.getByRole("link", { name: "Add user" }).click();

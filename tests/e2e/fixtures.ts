@@ -28,6 +28,8 @@ export const E2E_USERS = {
   /** Signs in once in global setup, so the first real test doesn't pay the cold-start cost. */
   warmup: { staffId: "e2e.warmup", displayName: "E2E Warm-up", role: "front_desk", enrolled: false },
   adminEnrolled: { staffId: "e2e.admin", displayName: "E2E Admin", role: "admin", enrolled: true },
+  adminBreakGlass: { staffId: "e2e.admin.bg", displayName: "E2E Admin Breaker", role: "admin", enrolled: true },
+  adminReviewer: { staffId: "e2e.admin.review", displayName: "E2E Admin Reviewer", role: "admin", enrolled: true },
   nurseMfaSetup: { staffId: "e2e.nurse.mfa", displayName: "E2E MFA Nurse", role: "nurse", enrolled: false },
   nurseAndLab: {
     staffId: "e2e.nurse.lab",
@@ -40,3 +42,6 @@ export const E2E_USERS = {
 
 /** Known recovery codes for e2e.doctor2. */
 export const E2E_RECOVERY_CODES = ["7K2QM-X9D4P", "H3NWB-6RT8C"];
+
+/** A synthetic patient seeded for the break-glass test (made-up name, no other test uses it). */
+export const E2E_PATIENT = { surname: "Kolavendu", firstName: "Temisaro", dateOfBirth: "1968-05-09" };

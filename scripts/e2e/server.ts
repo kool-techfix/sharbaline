@@ -12,6 +12,7 @@ import { freePort } from "../db/free-port";
 import {
   E2E_IDLE_SECONDS,
   E2E_PASSWORD,
+  E2E_PATIENT,
   E2E_RECOVERY_CODES,
   E2E_TOTP_SECRET,
   E2E_USERS,
@@ -54,9 +55,11 @@ const { authHmacKey, mfaEncryptionKey } = await import("@/server/auth/keys");
 const { encryptSecret } = await import("@/server/auth/mfa-crypto");
 const { hashRecoveryCode, normalizeRecoveryCode } = await import("@/server/auth/recovery-codes");
 const { uuidv7 } = await import("@/lib/ids");
+const { registerPatient } = await import("@/server/services/patients/register");
 
 const db = createDb(appEnv.DATABASE_URL);
 const totpSecret = Buffer.from(Secret.fromBase32(E2E_TOTP_SECRET).bytes);
+const userIds = new Map<string, string>();
 for (const user of Object.values(E2E_USERS)) {
   await withTransaction(db, async (tx) => {
     const userId = await insertUser(
@@ -71,6 +74,7 @@ for (const user of Object.values(E2E_USERS)) {
       },
       new Date(),
     );
+    userIds.set(user.staffId, userId);
     if (!user.enrolled) return;
     const { key, version } = mfaEncryptionKey();
     const encrypted = encryptSecret(key, version, userId, totpSecret);
@@ -96,6 +100,33 @@ for (const user of Object.values(E2E_USERS)) {
     });
   });
 }
+
+// One synthetic patient, registered through the real service as the front desk account.
+const registration = await registerPatient(
+  {
+    actor: { kind: "user", userId: userIds.get(E2E_USERS.frontDesk.staffId)!, role: "front_desk", sessionId: uuidv7() },
+    requestId: "e2e-seed",
+    ip: null,
+    deviceId: null,
+  },
+  {
+    id: uuidv7(),
+    surname: E2E_PATIENT.surname,
+    firstName: E2E_PATIENT.firstName,
+    otherNames: null,
+    sex: "female",
+    birth: { kind: "exact", date: E2E_PATIENT.dateOfBirth },
+    phone: null,
+    address: null,
+    legacyCardNumber: null,
+    nextOfKin: null,
+    priorityFolder: false,
+    consentConfirmed: true,
+    acknowledgedDuplicateIds: [],
+  },
+  db,
+);
+if (!registration.ok) throw new Error(`e2e seed: patient registration failed (${registration.reasonCode})`);
 await db.$disconnect();
 
 const next = spawn(path.resolve("node_modules/.bin/next"), ["start", "-p", String(port)], {
