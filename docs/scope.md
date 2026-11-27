@@ -52,6 +52,7 @@ C = create, R = read, U = update, C\* = correct by appending a new row (never an
 | Daily queue (D-032) | C R U | R U | R U | – | – | – |
 | Allergies / alerts | R | C R C\* | C R C\* | R | R | – |
 | Visit / consultation notes | – | R | C R U | – | – | – |
+| Visits (D-037) | – | C R U | C R U, close | – | – | – |
 | Vitals | – | C R C\* | R | – | – | – |
 | Test orders (incl. clinical information) | – | R | C R | R U | – | – |
 | Test results | – | R | R | C R U | – | – |

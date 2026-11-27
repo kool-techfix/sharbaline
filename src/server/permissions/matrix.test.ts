@@ -31,6 +31,7 @@ describe("permission matrix (docs/scope.md §4.1)", () => {
 
   it("gives admin no routine clinical access (break-glass only)", () => {
     for (const resource of [
+      "visits",
       "allergies",
       "consultation_notes",
       "vitals",

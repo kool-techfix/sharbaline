@@ -24,6 +24,12 @@ export const PERMISSIONS = {
     read: ["front_desk", "nurse", "doctor"],
     update: ["front_desk", "nurse", "doctor"],
   },
+  /** Visits (M3, D-037): opened by nurse or doctor; closing is a doctor action (consultation_notes). */
+  visits: {
+    create: ["nurse", "doctor"],
+    read: ["nurse", "doctor"],
+    update: ["nurse", "doctor"],
+  },
   allergies: {
     create: ["nurse", "doctor"],
     read: ["front_desk", "nurse", "doctor", "lab", "pharmacist"],

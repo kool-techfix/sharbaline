@@ -283,6 +283,9 @@ model Patient {
   duplicateOverrides  DuplicateOverride[] @relation("OverrideNew")
   suspectedIn         DuplicateOverride[] @relation("OverrideSuspected")
   breakGlassEvents    BreakGlassEvent[]
+  visits              Visit[]
+  vitals              Vitals[]
+  allergies           PatientAllergy[]
 
   @@index([legacyCardNumber])
   @@index([phoneE164])
@@ -335,6 +338,7 @@ model QueueEntry {
   updatedById String      @map("updated_by_id") @db.Uuid
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  visits  Visit[]
 
   @@unique([queueDate, patientId])
   @@unique([queueDate, position])
@@ -396,4 +400,157 @@ model BreakGlassReview {
   event BreakGlassEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
 
   @@map("break_glass_review")
+}
+
+// ───────────────────────────── Consultation (M3; D-037) ─────────────────────────────
+
+enum VisitType {
+  outpatient
+  follow_up
+  emergency
+}
+
+enum VisitStatus {
+  open
+  closed
+}
+
+/// One attendance. Opened by a nurse or doctor (linked to today's queue entry when there is
+/// one), closed by the doctor. At most one open visit per patient (partial unique index).
+/// Never deleted; only status, the attending doctor and the close fields change.
+model Visit {
+  id                String      @id @db.Uuid
+  patientId         String      @map("patient_id") @db.Uuid
+  queueEntryId      String?     @map("queue_entry_id") @db.Uuid
+  visitType         VisitType   @map("visit_type")
+  status            VisitStatus @default(open)
+  attendingDoctorId String?     @map("attending_doctor_id") @db.Uuid
+  openedAt          DateTime    @default(now()) @map("opened_at") @db.Timestamptz(6)
+  openedById        String      @map("opened_by_id") @db.Uuid
+  closedAt          DateTime?   @map("closed_at") @db.Timestamptz(6)
+  closedById        String?     @map("closed_by_id") @db.Uuid
+
+  patient      Patient            @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  queueEntry   QueueEntry?        @relation(fields: [queueEntryId], references: [id], onDelete: Restrict)
+  vitals       Vitals[]
+  noteVersions VisitNoteVersion[]
+  noteDrafts   NoteDraft[]
+
+  @@index([patientId, openedAt])
+  @@index([queueEntryId])
+  @@map("visit")
+}
+
+/// Append-only (D-007). A correction is a new row with supersedes_id and a reason; with no
+/// measurements it strikes the original out ("entered in error"). Each row is corrected once.
+/// Ranges are CHECKed in SQL against typos, pending clinical sign-off (D-037).
+model Vitals {
+  id           String   @id @db.Uuid
+  visitId      String   @map("visit_id") @db.Uuid
+  patientId    String   @map("patient_id") @db.Uuid
+  temperatureC Decimal? @map("temperature_c") @db.Decimal(4, 1)
+  pulseBpm     Int?     @map("pulse_bpm")
+  respRate     Int?     @map("resp_rate")
+  bpSystolic   Int?     @map("bp_systolic")
+  bpDiastolic  Int?     @map("bp_diastolic")
+  spo2Pct      Int?     @map("spo2_pct")
+  weightKg     Decimal? @map("weight_kg") @db.Decimal(5, 1)
+  heightCm     Decimal? @map("height_cm") @db.Decimal(4, 1)
+  note         String?
+  supersedesId String?  @unique @map("supersedes_id") @db.Uuid
+  /// Why the superseded row was wrong. Set exactly when supersedes_id is.
+  errorReason  String?  @map("error_reason")
+  recordedById String   @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  visit        Visit   @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  patient      Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  supersedes   Vitals? @relation("VitalsCorrection", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy Vitals? @relation("VitalsCorrection")
+
+  @@index([visitId, recordedAt])
+  @@index([patientId, recordedAt])
+  @@map("vitals")
+}
+
+enum AllergyKind {
+  allergy
+  no_known_allergies
+}
+
+enum AllergySeverity {
+  mild
+  moderate
+  severe
+  unknown
+}
+
+enum AllergyStatus {
+  active
+  resolved
+  entered_in_error
+}
+
+/// Append-only (D-007). Each change is a new row superseding the previous one; the current
+/// state is the rows nothing supersedes. "No known allergies" is an explicit row, never assumed.
+model PatientAllergy {
+  id           String           @id @db.Uuid
+  patientId    String           @map("patient_id") @db.Uuid
+  kind         AllergyKind
+  /// Free text in M3; linked to an allergen group for prescribing checks in M5b (D-005).
+  allergen     String?
+  reaction     String?
+  severity     AllergySeverity?
+  status       AllergyStatus
+  supersedesId String?          @unique @map("supersedes_id") @db.Uuid
+  /// Required for entered_in_error; optional otherwise.
+  reason       String?
+  recordedById String           @map("recorded_by_id") @db.Uuid
+  recordedAt   DateTime         @default(now()) @map("recorded_at") @db.Timestamptz(6)
+
+  patient      Patient         @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  supersedes   PatientAllergy? @relation("AllergyChange", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy PatientAllergy? @relation("AllergyChange")
+
+  @@index([patientId, recordedAt])
+  @@map("patient_allergy")
+}
+
+/// Append-only. Every save is a new version numbered per visit. A save based on a version that
+/// is no longer the newest is still kept, flagged is_conflict, so nothing is overwritten.
+model VisitNoteVersion {
+  id                  String   @id @db.Uuid
+  visitId             String   @map("visit_id") @db.Uuid
+  versionNo           Int      @map("version_no")
+  parentVersionId     String?  @map("parent_version_id") @db.Uuid
+  presentingComplaint String?  @map("presenting_complaint")
+  history             String?
+  examination         String?
+  diagnosisText       String?  @map("diagnosis_text")
+  plan                String?
+  isConflict          Boolean  @default(false) @map("is_conflict")
+  authorId            String   @map("author_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  visit         Visit              @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  parentVersion VisitNoteVersion?  @relation("NoteParent", fields: [parentVersionId], references: [id], onDelete: Restrict)
+  children      VisitNoteVersion[] @relation("NoteParent")
+
+  @@unique([visitId, versionNo])
+  @@map("visit_note_version")
+}
+
+/// A doctor's unsaved note (D-011): mutable, one per visit and user, deleted when a version is
+/// saved. Not part of the clinical record.
+model NoteDraft {
+  visitId       String   @map("visit_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  content       Json
+  baseVersionId String?  @map("base_version_id") @db.Uuid
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
+
+  @@id([visitId, userId])
+  @@map("note_draft")
 }

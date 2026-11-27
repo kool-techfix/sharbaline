@@ -444,3 +444,44 @@ The admin side of D-035.
 - **Reviewing:**
   - Another admin chooses Appropriate, Not appropriate or Needs follow-up. A comment is required unless the access was appropriate.
   - Your own events show "a different admin must review it" instead of the form.
+
+## D-037 · Consultation: build order, visits, vitals, allergies, notes
+2026-11-27 · Accepted · Project lead (clinical items pending hospital sign-off)
+
+**Build order.** M3 is built now, without prescribing and test ordering. Prescribing (M5b) follows the pharmacy core (M5a), and test ordering comes with the lab slice (M4). This changes architecture §3, slice 4: consultation no longer waits for the pharmacy core.
+
+**Visits.**
+- A nurse or doctor opens a visit. It's linked to today's queue entry when there is one, and a patient has at most one open visit (partial unique index). A new `visits` resource in the matrix covers this: nurse and doctor, create, read and update.
+- The queue follows the visit:
+  - a nurse opening it moves the patient waiting → with nurse
+  - "send to doctor" moves them to waiting for doctor
+  - a doctor taking it moves them to with doctor and makes that doctor the attending doctor
+  - closing moves them to done
+- Taking and closing are doctor actions (the `consultation_notes` create permission).
+- A visit is never deleted. Its patient and opening details never change, and once closed it never changes (trigger).
+- Visit types are outpatient, follow-up and emergency, pending sign-off.
+
+**Vitals** (D-007).
+- Vitals are append-only. A correction is a new row with `supersedes_id` and a reason; with no measurements it just strikes the original out. Each row is corrected once (unique `supersedes_id`; concurrent corrections are serialised).
+- The architecture's `entered_in_error` column is dropped: a row is entered in error when another row supersedes it.
+- Plausible ranges are CHECKed in SQL and validated in Zod, pending clinical sign-off: temperature 30–45 °C, pulse 20–250, respiratory rate 4–80, BP systolic 50–260 and diastolic 20–160 (systolic above diastolic, both or neither), SpO₂ 50–100 %, weight 0.3–400 kg, height 20–250 cm.
+
+**Allergies** (D-007).
+- Allergies are append-only, with a status of active, resolved or entered in error (which requires a reason). The current list is the rows nothing supersedes.
+- "No known allergies" is an explicit row and is never assumed from an empty list. Recording an allergy retires it, and it can't be recorded while an allergy is active.
+- The allergen is free text in M3. Prescribing (M5b) links it to allergen groups (D-005).
+
+**Notes.**
+- Every save is a new version, numbered per visit with the visit row locked, so numbers have no gaps.
+- A save names the version it started from. If that isn't the newest, the save is kept with `is_conflict`, and the screen shows both. A later save from the newest version resolves the conflict.
+- Diagnosis is free text, with no coding system in Phase 1.
+- Notes can be added to a closed visit, for example a late addendum; versions make that safe.
+- Each doctor has their own server draft per visit (D-011), deleted when a version is saved.
+
+**Integrity.** Triggers keep a correction or new version on the same patient and visit as the row it follows. Audit entries carry ids, field names and counts, never clinical text.
+
+**Who reads what.**
+- Nurses and doctors see the clinical summary (header, allergies, timeline) and full visits.
+- Every role with allergy access sees allergies.
+- Lab, pharmacists and front desk get no visits or notes.
+- Admins read clinical data only through break-glass (D-035) and can't write it.
