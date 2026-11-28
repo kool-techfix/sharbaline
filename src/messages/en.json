@@ -422,5 +422,14 @@
   "breakGlass.review.commentHint": "Required unless the access was appropriate.",
   "breakGlass.review.comment.error": "Add a comment saying what was wrong or what needs following up.",
   "breakGlass.review.submit": "Save review",
-  "breakGlass.review.saved": "Review saved."
+  "breakGlass.review.saved": "Review saved.",
+  "clinical.error.visitNotFound": "That visit wasn't found for this patient.",
+  "clinical.error.visitClosed": "This visit is closed. Open a new visit to record more.",
+  "clinical.error.idConflict": "Something went wrong saving. Reload the page and try again.",
+  "clinical.error.vitalsNotFound": "Those vitals weren't found for this patient.",
+  "clinical.error.alreadyCorrected": "Someone has already corrected these vitals. Reload to see the correction.",
+  "clinical.error.allergyNotFound": "That allergy wasn't found for this patient.",
+  "clinical.error.allergyChanged": "Someone changed this allergy just now. Reload to see the latest.",
+  "clinical.error.hasActiveAllergies": "This patient has an active allergy recorded, so \"no known allergies\" can't be recorded.",
+  "clinical.error.noteVersionNotFound": "The note version this was based on wasn't found. Reload and try again."
 }

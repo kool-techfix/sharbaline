@@ -120,28 +120,30 @@ Patient           id, patient_number UNIQUE (immutable, trigger-enforced; D-003)
                   possible_duplicate_of_id?, merged_into_id?     (D-010; merge is Phase 2)
                   created_at, created_by, updated_at
 NextOfKin         id, patient_id, name, relationship, phone_e164
-PatientAllergy [AO]
-                  id, patient_id, allergen_group_id? | free_text, reaction, severity,
-                  status (active|resolved|entered_in_error), reason?, supersedes_id?,
-                  recorded_by, recorded_at                         (D-007)
+PatientAllergy    see §2.4 (built with M3); allergen_group_id? is added with prescribing (M5b)
 DuplicateOverride [AO]  id, new_patient_id, suspected_patient_id, score, confirmed_by, at
 QueueEntry        id, patient_id, queue_date (Lagos), position,
                   status (waiting|with_nurse|waiting_doctor|with_doctor|done|left), updated_at
 ```
-Search: patient number (with or without prefix, check digit validated), `legacy_card_number`, phone, or trigram name match. Duplicate scoring (name similarity + DOB with tolerance if estimated + phone) is a pure function in `lib/domain`. As built in M2 (D-032): `phone_e164`; `updated_by_id`; `hospital_setting` holds `patient_number_prefix`; `PatientAllergy` arrives with M3; patient, next-of-kin and queue rows have delete-blocking triggers.
+Search: patient number (with or without prefix, check digit validated), `legacy_card_number`, phone, or trigram name match. Duplicate scoring (name similarity + DOB with tolerance if estimated + phone) is a pure function in `lib/domain`. As built in M2 (D-032): `phone_e164`; `updated_by_id`; `hospital_setting` holds `patient_number_prefix`; `PatientAllergy` arrived with M3 (§2.4); patient, next-of-kin and queue rows have delete-blocking triggers.
 
 ### 2.4 Visits, vitals, notes
 ```
-Visit             id, patient_id, queue_entry_id?, attending_doctor_id?, visit_type,
-                  status (open|closed), opened_at, closed_at
+Visit             id, patient_id, queue_entry_id?, attending_doctor_id?, visit_type
+                  (outpatient|follow_up|emergency), status (open|closed), opened_at, opened_by_id,
+                  closed_at?, closed_by_id?        one open per patient; closed = frozen (D-037)
 Vitals [AO]       id, visit_id, patient_id, temperature_c, pulse_bpm, resp_rate, bp_systolic,
-                  bp_diastolic, spo2_pct, weight_kg, height_cm, note?,
-                  entered_in_error bool, error_reason?, supersedes_id?,
-                  recorded_by, recorded_at             CHECKs on plausible ranges (D-007)
+                  bp_diastolic, spo2_pct, weight_kg, height_cm, note?, supersedes_id? UNIQUE,
+                  error_reason? (set iff supersedes_id), recorded_by_id, recorded_at
+                  CHECKs on plausible ranges (D-007, D-037)
+PatientAllergy [AO]
+                  id, patient_id, kind (allergy|no_known_allergies), allergen?, reaction?,
+                  severity?, status (active|resolved|entered_in_error), supersedes_id? UNIQUE,
+                  reason?, recorded_by_id, recorded_at                          (D-007, D-037)
 VisitNoteVersion [AO]
-                  id, visit_id, version_no, parent_version_id?, presenting_complaint, history,
-                  examination, diagnosis_text, diagnosis_code?, plan, author_id, created_at,
-                  is_conflict
+                  id, visit_id, version_no (UNIQUE per visit), parent_version_id?,
+                  presenting_complaint, history, examination, diagnosis_text, plan, is_conflict,
+                  author_id, created_at
 NoteDraft         PK(visit_id, user_id), content jsonb, base_version_id, updated_at   (D-011)
 ```
 Concurrent edits: each save sends the `parent_version_id` it was based on. If that version is no longer the newest, the new row is still stored with `is_conflict = true` and the UI shows both versions. Nothing is silently overwritten.

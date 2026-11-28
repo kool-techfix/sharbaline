@@ -5,6 +5,9 @@ import { makeUser } from "../integration/helpers/auth";
 import { userContext } from "../integration/helpers/context";
 import { makePatient, patientInput } from "../integration/helpers/patients";
 import { startBreakGlass } from "@/server/services/break-glass/break-glass";
+import { recordAllergy } from "@/server/services/clinical/allergies";
+import { openVisit } from "@/server/services/clinical/visits";
+import { recordVitals } from "@/server/services/clinical/vitals";
 import { addToQueue } from "@/server/services/queue/queue";
 
 /**
@@ -46,6 +49,29 @@ const anEvent = async (t: TestDatabase) => {
   if (!outcome.ok) throw new Error("fixture: break-glass did not start");
   return id;
 };
+/** An open visit for a new patient, opened by a nurse. */
+const anOpenVisit = async (t: TestDatabase) => {
+  const { patientId } = await aPatient(t);
+  const visitId = uuidv7();
+  const outcome = await openVisit(userContext("nurse"), { id: visitId, patientId, visitType: "outpatient" }, t.db);
+  if (!outcome.ok) throw new Error("fixture: visit did not open");
+  return { visitId, patientId };
+};
+const aVitalsRow = async (t: TestDatabase) => {
+  const visit = await anOpenVisit(t);
+  const id = uuidv7();
+  const outcome = await recordVitals(userContext("nurse"), { id, ...visit, measurements: { pulseBpm: 80 } }, t.db);
+  if (!outcome.ok) throw new Error("fixture: vitals not recorded");
+  return { patientId: visit.patientId, supersedesId: id };
+};
+const anAllergy = async (t: TestDatabase) => {
+  const { patientId } = await aPatient(t);
+  const id = uuidv7();
+  const outcome = await recordAllergy(userContext("nurse"), { id, patientId, kind: "allergy", allergen: "Penicillin" }, t.db);
+  if (!outcome.ok) throw new Error("fixture: allergy not recorded");
+  return { patientId, supersedesId: id };
+};
+const noteFields = { presentingComplaint: "Synthetic fever for two days", history: null, examination: null, diagnosisText: null, plan: null };
 const newAccount = async () => ({
   id: uuidv7(),
   staffId: `pm.${uuidv7().slice(-12)}`,
@@ -102,6 +128,41 @@ export const FIXTURES: Record<string, Fixture> = {
   "queue.add": { permission: { resource: "queue", action: "create" }, input: async (t) => ({ id: uuidv7(), ...(await aPatient(t)) }) },
   "queue.view": { permission: { resource: "queue", action: "read" }, input: async () => ({}) },
   "queue.mark_left": { permission: { resource: "queue", action: "update" }, input: queuedEntry },
+  "visits.open": {
+    permission: { resource: "visits", action: "create" },
+    input: async (t) => ({ id: uuidv7(), ...(await aPatient(t)), visitType: "outpatient" }),
+  },
+  "visits.send_to_doctor": { permission: { resource: "visits", action: "update" }, input: anOpenVisit },
+  "visits.take": { permission: { resource: "consultation_notes", action: "create" }, input: anOpenVisit },
+  "visits.close": { permission: { resource: "consultation_notes", action: "create" }, input: anOpenVisit },
+  "vitals.record": {
+    permission: { resource: "vitals", action: "create" },
+    input: async (t) => ({ id: uuidv7(), ...(await anOpenVisit(t)), measurements: { temperatureC: 37.2 } }),
+  },
+  "vitals.correct": {
+    permission: { resource: "vitals", action: "correct" },
+    input: async (t) => ({ id: uuidv7(), ...(await aVitalsRow(t)), reason: "Wrong patient", measurements: null }),
+  },
+  "allergies.view": { permission: { resource: "allergies", action: "read" }, input: aPatient },
+  "allergies.record": {
+    permission: { resource: "allergies", action: "create" },
+    input: async (t) => ({ id: uuidv7(), ...(await aPatient(t)), kind: "allergy", allergen: "Sulfa drugs", severity: "moderate" }),
+  },
+  "allergies.change": {
+    permission: { resource: "allergies", action: "correct" },
+    input: async (t) => ({ id: uuidv7(), ...(await anAllergy(t)), status: "resolved" }),
+  },
+  "notes.save": {
+    permission: { resource: "consultation_notes", action: "create" },
+    input: async (t) => ({ id: uuidv7(), ...(await anOpenVisit(t)), parentVersionId: null, fields: noteFields }),
+  },
+  "notes.draft_save": {
+    permission: { resource: "consultation_notes", action: "update" },
+    input: async (t) => ({ ...(await anOpenVisit(t)), baseVersionId: null, fields: noteFields }),
+  },
+  "notes.draft_discard": { permission: { resource: "consultation_notes", action: "update" }, input: anOpenVisit },
+  "clinical.summary": { permission: { resource: "visits", action: "read" }, input: aPatient },
+  "clinical.visit": { permission: { resource: "visits", action: "read" }, input: anOpenVisit },
   "break_glass.start": {
     permission: { resource: "break_glass", action: "create" },
     input: async (t) => ({
