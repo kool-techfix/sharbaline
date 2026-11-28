@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { t } from "@/lib/i18n";
 import { uuidv7 } from "@/lib/ids";
 import type { ReviewOutcome } from "@/server/services/break-glass/break-glass";
-import { FieldError, RadioCards } from "../../_components/RadioCards";
+import { FieldError, RadioCards } from "@/app/(staff)/_components/RadioCards";
 import { review } from "../actions";
 
 const OUTCOMES: ReviewOutcome[] = ["appropriate", "inappropriate", "needs_follow_up"];
