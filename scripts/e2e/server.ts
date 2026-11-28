@@ -12,6 +12,7 @@ import { freePort } from "../db/free-port";
 import {
   E2E_IDLE_SECONDS,
   E2E_PASSWORD,
+  E2E_NURSE_PATIENT,
   E2E_PATIENT,
   E2E_RECOVERY_CODES,
   E2E_TOTP_SECRET,
@@ -56,6 +57,7 @@ const { encryptSecret } = await import("@/server/auth/mfa-crypto");
 const { hashRecoveryCode, normalizeRecoveryCode } = await import("@/server/auth/recovery-codes");
 const { uuidv7 } = await import("@/lib/ids");
 const { registerPatient } = await import("@/server/services/patients/register");
+const { addToQueue } = await import("@/server/services/queue/queue");
 
 const db = createDb(appEnv.DATABASE_URL);
 const totpSecret = Buffer.from(Secret.fromBase32(E2E_TOTP_SECRET).bytes);
@@ -101,32 +103,42 @@ for (const user of Object.values(E2E_USERS)) {
   });
 }
 
-// One synthetic patient, registered through the real service as the front desk account.
-const registration = await registerPatient(
-  {
-    actor: { kind: "user", userId: userIds.get(E2E_USERS.frontDesk.staffId)!, role: "front_desk", sessionId: uuidv7() },
-    requestId: "e2e-seed",
-    ip: null,
-    deviceId: null,
-  },
-  {
-    id: uuidv7(),
-    surname: E2E_PATIENT.surname,
-    firstName: E2E_PATIENT.firstName,
-    otherNames: null,
-    sex: "female",
-    birth: { kind: "exact", date: E2E_PATIENT.dateOfBirth },
-    phone: null,
-    address: null,
-    legacyCardNumber: null,
-    nextOfKin: null,
-    priorityFolder: false,
-    consentConfirmed: true,
-    acknowledgedDuplicateIds: [],
-  },
-  db,
-);
-if (!registration.ok) throw new Error(`e2e seed: patient registration failed (${registration.reasonCode})`);
+// Synthetic patients, registered through the real services as the front desk account.
+const frontDeskCtx = () => ({
+  actor: { kind: "user" as const, userId: userIds.get(E2E_USERS.frontDesk.staffId)!, role: "front_desk" as const, sessionId: uuidv7() },
+  requestId: "e2e-seed",
+  ip: null,
+  deviceId: null,
+});
+
+async function seedPatient(patient: { surname: string; firstName: string; dateOfBirth: string }, sex: "female" | "male") {
+  const registration = await registerPatient(
+    frontDeskCtx(),
+    {
+      id: uuidv7(),
+      surname: patient.surname,
+      firstName: patient.firstName,
+      otherNames: null,
+      sex,
+      birth: { kind: "exact", date: patient.dateOfBirth },
+      phone: null,
+      address: null,
+      legacyCardNumber: null,
+      nextOfKin: null,
+      priorityFolder: false,
+      consentConfirmed: true,
+      acknowledgedDuplicateIds: [],
+    },
+    db,
+  );
+  if (!registration.ok) throw new Error(`e2e seed: patient registration failed (${registration.reasonCode})`);
+  return registration.value.patientId;
+}
+
+await seedPatient(E2E_PATIENT, "female");
+// The nurse test starts this patient's visit from today's queue.
+const queued = await addToQueue(frontDeskCtx(), { id: uuidv7(), patientId: await seedPatient(E2E_NURSE_PATIENT, "male") }, db);
+if (!queued.ok) throw new Error(`e2e seed: queueing failed (${queued.reasonCode})`);
 await db.$disconnect();
 
 const next = spawn(path.resolve("node_modules/.bin/next"), ["start", "-p", String(port)], {

@@ -30,6 +30,7 @@ export const E2E_USERS = {
   adminEnrolled: { staffId: "e2e.admin", displayName: "E2E Admin", role: "admin", enrolled: true },
   adminBreakGlass: { staffId: "e2e.admin.bg", displayName: "E2E Admin Breaker", role: "admin", enrolled: true },
   adminReviewer: { staffId: "e2e.admin.review", displayName: "E2E Admin Reviewer", role: "admin", enrolled: true },
+  nurseVisits: { staffId: "e2e.nurse.visits", displayName: "E2E Visits Nurse", role: "nurse", enrolled: false },
   nurseMfaSetup: { staffId: "e2e.nurse.mfa", displayName: "E2E MFA Nurse", role: "nurse", enrolled: false },
   nurseAndLab: {
     staffId: "e2e.nurse.lab",
@@ -45,3 +46,6 @@ export const E2E_RECOVERY_CODES = ["7K2QM-X9D4P", "H3NWB-6RT8C"];
 
 /** A synthetic patient seeded for the break-glass test (made-up name, no other test uses it). */
 export const E2E_PATIENT = { surname: "Kolavendu", firstName: "Temisaro", dateOfBirth: "1968-05-09" };
+
+/** A synthetic patient seeded into today's queue for the nurse test (made-up name, no other test uses it). */
+export const E2E_NURSE_PATIENT = { surname: "Abiodara", firstName: "Kesiena", dateOfBirth: "1991-02-14" };

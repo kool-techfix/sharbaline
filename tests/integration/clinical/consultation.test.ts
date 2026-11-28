@@ -72,6 +72,11 @@ describe("visits and the queue", () => {
 
     await sendToDoctor(again(nurse), { visitId, patientId }, t.db);
     expect(await queueStatus(patientId)).toBe("waiting_doctor");
+    // The visit read carries the queue status, so the nurse's screen knows it was sent.
+    expect(await getVisit(userContext("nurse"), { patientId, visitId }, t.db)).toMatchObject({
+      ok: true,
+      value: { queueStatus: "waiting_doctor" },
+    });
 
     const doctor = userContext("doctor");
     await takeVisit(doctor, { visitId, patientId }, t.db);
@@ -99,6 +104,7 @@ describe("visits and the queue", () => {
     const { id: patientId } = await makePatient(t);
     const visitId = await open(userContext("nurse"), patientId);
     expect(await sendToDoctor(userContext("nurse"), { visitId, patientId }, t.db)).toMatchObject({ ok: true, value: { queueStatus: null } });
+    expect(await getVisit(userContext("nurse"), { patientId, visitId }, t.db)).toMatchObject({ ok: true, value: { queueStatus: null } });
   });
 
   it("refuses a visit id that belongs to another patient", async () => {
