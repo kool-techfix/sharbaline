@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { VITALS_RANGES, type VitalsField } from "@/lib/domain/vitals";
 import { defineService } from "@/server/kernel/define-service";
 import { fail, ok, type Outcome } from "@/server/kernel/outcome";
 import { actorId } from "../patients/shared";
@@ -11,19 +12,25 @@ import { loadVisit, optionalText, requiredText } from "./shared";
  * with no measurements it strikes the original out.
  */
 
-const measure = (min: number, max: number, step: "int" | "tenth") =>
-  (step === "int" ? z.number().int() : z.number().multipleOf(0.1)).min(min).max(max).nullish().transform((v) => v ?? null);
+const measure = (field: VitalsField) => {
+  const { min, max, step } = VITALS_RANGES[field];
+  return (step === "int" ? z.number().int() : z.number().multipleOf(0.1))
+    .min(min)
+    .max(max)
+    .nullish()
+    .transform((v) => v ?? null);
+};
 
 export const measurementsSchema = z
   .object({
-    temperatureC: measure(30, 45, "tenth"),
-    pulseBpm: measure(20, 250, "int"),
-    respRate: measure(4, 80, "int"),
-    bpSystolic: measure(50, 260, "int"),
-    bpDiastolic: measure(20, 160, "int"),
-    spo2Pct: measure(50, 100, "int"),
-    weightKg: measure(0.3, 400, "tenth"),
-    heightCm: measure(20, 250, "tenth"),
+    temperatureC: measure("temperatureC"),
+    pulseBpm: measure("pulseBpm"),
+    respRate: measure("respRate"),
+    bpSystolic: measure("bpSystolic"),
+    bpDiastolic: measure("bpDiastolic"),
+    spo2Pct: measure("spo2Pct"),
+    weightKg: measure("weightKg"),
+    heightCm: measure("heightCm"),
     note: optionalText(500),
   })
   .refine((v) => (v.bpSystolic === null) === (v.bpDiastolic === null), {

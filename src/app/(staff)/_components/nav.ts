@@ -15,6 +15,13 @@ export function navFor(role: Role): NavItem[] {
       { href: "/account", label: t("staff.account") },
     ];
   }
+  if (role === "nurse") {
+    return [
+      { href: ROLE_HOME[role], label: t("staff.home") },
+      { href: "/nurse/patients", label: t("staff.patients") },
+      { href: "/account", label: t("staff.account") },
+    ];
+  }
   if (role === "admin") {
     return [
       { href: ROLE_HOME[role], label: t("staff.home") },

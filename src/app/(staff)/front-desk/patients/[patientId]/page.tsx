@@ -10,7 +10,7 @@ import { getPatient } from "@/server/services/patients/records";
 import { AddToQueue } from "../../_components/AddToQueue";
 import { displayName } from "@/app/(staff)/_components/patients/format";
 import { PatientDetails } from "@/app/(staff)/_components/patients/PatientDetails";
-import { QueueStatusChip } from "../../_components/QueueStatusChip";
+import { QueueStatusChip } from "@/app/(staff)/_components/QueueStatusChip";
 
 export const dynamic = "force-dynamic";
 

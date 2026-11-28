@@ -485,3 +485,37 @@ The admin side of D-035.
 - Every role with allergy access sees allergies.
 - Lab, pharmacists and front desk get no visits or notes.
 - Admins read clinical data only through break-glass (D-035) and can't write it.
+
+## D-038 · Nurse screens (M3)
+2026-11-28 · Accepted · Project lead
+
+There's no design PNG for the nurse, so these screens follow the patterns of the front desk screens (D-033) and the scope.
+
+**Nurse home is today's queue.** The page keeps the "Welcome" heading. Below it is today's queue, with "Start visit" on waiting patients and "Continue" on patients already with a nurse. Starting from the queue opens an outpatient visit. The patient page lets the nurse choose the visit type first. If another nurse got there first, the server returns the visit already open, so nobody ends up with two.
+
+**Patient search for nurses.** Navigation gets a Patients link, using the same audited search as the front desk, for patients who aren't in the queue (for example, someone brought straight in). Nurses can't register patients.
+
+**The patient page.**
+- **Header:** name, patient number, sex and age, and allergy chips.
+  - Active allergies show as danger chips with an icon and text.
+  - "No known allergies" shows only when someone recorded it.
+  - An empty list shows "Allergies not recorded", so a missing record never looks like a safe one.
+- **Today's visit:**
+  - vitals, newest first
+  - "Record vitals"
+  - "Send to doctor", shown only while the patient is waiting or with the nurse
+- **Allergies:** add an allergy, record "no known allergies", and change a status (active, resolved, entered in error, the last needing a reason).
+- **Earlier visits:** date, type, doctor, latest diagnosis and latest vitals. Nurses may read notes (scope §4.1).
+
+**Vitals entry.**
+- Every box is optional, and units are in the labels.
+- The form checks the same ranges as the server, which now come from one shared module (`src/lib/domain/vitals.ts`), and shows each problem next to its box, so a typo like 378 °C is caught before saving.
+- The boxes are text with a decimal keypad, not `type="number"`, which silently drops some typed values in some browsers.
+
+**Corrections.**
+- "Correct" on an entry opens the correction form below the table, with `?correct=<vitals id>` in the URL. That id is opaque, like the patient id already in the path (rule 2).
+- The nurse chooses "some values are wrong" (enter the right ones, starting from the originals) or "the whole entry is wrong" (strike it out), and gives a reason.
+- The original stays in the table, struck through and labelled "Entered in error" with the reason, so it never relies on colour or strike-through alone.
+- Corrections are offered on the open visit's vitals. Correcting a closed visit's vitals is allowed by the service (D-037) but has no screen yet.
+
+**Visit read.** `clinical.visit` now also returns the queue status, so the screen knows whether the patient has been sent on.

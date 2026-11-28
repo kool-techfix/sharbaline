@@ -179,6 +179,8 @@ export interface VisitDetail extends Omit<VisitSummary, "latestNote" | "vitals">
   vitals: VitalsView[];
   /** Every note version, newest first. */
   noteVersions: NoteVersionView[];
+  /** Where the patient is in today's queue, or null for a visit opened outside it. */
+  queueStatus: "waiting" | "with_nurse" | "waiting_doctor" | "with_doctor" | "done" | "left" | null;
   /** The caller's own unsaved draft, if any (doctors). */
   myDraft: { fields: NoteFields; baseVersionId: string | null; updatedAt: Date } | null;
 }
@@ -201,6 +203,7 @@ export const getVisit = defineService({
         openedAt: true,
         closedAt: true,
         attendingDoctorId: true,
+        queueEntry: { select: { status: true } },
         vitals: { orderBy: { recordedAt: "desc" }, select: vitalsSelect },
         noteVersions: {
           orderBy: { versionNo: "desc" },
@@ -238,6 +241,7 @@ export const getVisit = defineService({
       attendingDoctor: visit.attendingDoctorId ? (names.get(visit.attendingDoctorId) ?? null) : null,
       vitals: visit.vitals.map((row) => toVitals(row, names)),
       noteVersions: visit.noteVersions.map(({ authorId, ...version }) => ({ ...version, author: names.get(authorId) ?? null })),
+      queueStatus: visit.queueEntry?.status ?? null,
       myDraft: draft
         ? { fields: draft.content as unknown as NoteFields, baseVersionId: draft.baseVersionId, updatedAt: draft.updatedAt }
         : null,

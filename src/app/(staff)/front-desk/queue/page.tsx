@@ -15,7 +15,7 @@ import { actorOf, requireRole } from "@/server/http/guard";
 import { listQueue } from "@/server/services/queue/queue";
 import { calendarDate, ageLabel, displayName, sexLabel } from "@/app/(staff)/_components/patients/format";
 import { MarkLeft } from "../_components/MarkLeft";
-import { QueueStatusChip } from "../_components/QueueStatusChip";
+import { QueueStatusChip } from "@/app/(staff)/_components/QueueStatusChip";
 
 export const dynamic = "force-dynamic";
 
